@@ -3,12 +3,11 @@
 
 export const CONFIG = {
   // Tài nguyên
-  modelUrl: './hcmute-khu-b.glb',
   voiceUrl: './mieu-tho-audio.wav',
-  brickTextureUrl: './assets/tuong_nha.jpg',
+  modelUrl: './assets/khu-b-courtyard.glb',
 
   // Người chơi
-  spawn: { x: 2.2, y: 0, z: 18, yaw: 0.08 },
+  spawn: { x: -9.35, y: 0, z: 18.9, yaw: -0.24 },
   eyeHeight: 1.65,
   playerRadius: 0.34,
   walkSpeed: 3.1,
@@ -17,14 +16,14 @@ export const CONFIG = {
 
   // Không gian chơi
   bounds: {
-    xMin: -13.2,
-    xMax: 12.4,
+    xMin: -18.1,
+    xMax: 15.25,
     zLoop: 21.5, // vượt mốc này sẽ bị "ma che mắt" đưa về đầu bên kia
   },
 
   // Bầu không khí
   fogColor: 0x0b0e14,
-  fogDensity: 0.055,
+  fogDensity: 0.034,
   backgroundColor: 0x07090d,
 
   // Miếu thờ (dịch về cuối vườn để có hành trình đi bộ)

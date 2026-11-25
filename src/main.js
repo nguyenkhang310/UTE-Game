@@ -25,7 +25,7 @@ const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerH
 scene.add(camera);
 
 const hud = new HUD();
-const environment = createEnvironment(scene, renderer);
+createEnvironment(scene);
 const flashlight = new Flashlight(camera);
 const audio = new AudioSystem(scene, camera);
 
@@ -49,7 +49,8 @@ try {
   shrine = new ShrineSystem(scene, world, audio, hud);
 
   player = new Player(camera, {
-    colliders: [...environment.colliders, ...world.colliders],
+    colliders: world.colliders,
+    floors: world.floors,
     onLock: () => {
       hud.hideOverlay();
       if (!hasShownIntro) {

@@ -7,9 +7,10 @@ const UP = new THREE.Vector3(0, 1, 0);
 // Điều khiển góc nhìn thứ nhất: WASD, Alt khoá chuột, va chạm và
 // vòng lặp không gian ở hai đầu vườn.
 export class Player {
-  constructor(camera, { colliders, onLock, onUnlock, onLoop, onFootstep }) {
+  constructor(camera, { colliders, floors = [], onLock, onUnlock, onLoop, onFootstep }) {
     this.camera = camera;
     this.colliders = colliders;
+    this.floors = floors;
     this.onLock = onLock;
     this.onUnlock = onUnlock;
     this.onLoop = onLoop;
@@ -50,7 +51,7 @@ export class Player {
   }
 
   teleport(x, z, yaw = 0) {
-    this.camera.position.set(x, CONFIG.eyeHeight, z);
+    this.camera.position.set(x, CONFIG.eyeHeight + this._floorHeight(x, z), z);
     this.camera.rotation.set(0, yaw, 0, 'YXZ');
     this.velocity.set(0, 0, 0);
   }
@@ -103,9 +104,11 @@ export class Player {
     }
 
     const bob = Math.sin(this.bobPhase * 2) * 0.035 * Math.min(1, planarSpeed / 2);
-    this.camera.position.y = CONFIG.eyeHeight + bob;
-
     this._handleSpatialLoop(dt);
+
+    const { x, z } = this.camera.position;
+    const targetHeight = CONFIG.eyeHeight + this._floorHeight(x, z) + bob;
+    this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, targetHeight, 18, dt);
   }
 
   _moveWithCollisions(dx, dz) {
@@ -117,6 +120,16 @@ export class Player {
 
     let nextZ = position.z + dz;
     if (!this._blocked(position.x, nextZ, r)) position.z = nextZ;
+  }
+
+  _floorHeight(x, z) {
+    for (const floor of this.floors) {
+      if (x >= floor.minX && x <= floor.maxX && z >= floor.minZ && z <= floor.maxZ) {
+        const t = (x - floor.minX) / (floor.maxX - floor.minX);
+        return THREE.MathUtils.lerp(floor.start, floor.end, t);
+      }
+    }
+    return 0;
   }
 
   _blocked(x, z, radius) {
