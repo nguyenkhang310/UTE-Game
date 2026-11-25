@@ -18,8 +18,6 @@ try {
 
 async function start() {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-  renderer.setSize(innerWidth, innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.09;
   renderer.shadowMap.enabled = true;
@@ -32,11 +30,11 @@ async function start() {
   controls.minPolarAngle = 0.12;
   controls.maxPolarAngle = Math.PI - 0.10;
   const sun = illuminate(scene, renderer);
-  const model = await new GLTFLoader().loadAsync('./trung-tam.glb', (event) => {
+  const model = await new GLTFLoader().loadAsync(canvas.dataset.model, (event) => {
     if (event.total > 0) enter.textContent = `Đang tải… ${Math.min(99, Math.round(100 * event.loaded / event.total))}%`;
   });
 
-  const { colliders, floors, views } = prepareCampus(scene, model.scene, renderer);
+  const { colliders, floors, views, limits } = prepareCampus(scene, model.scene, renderer);
   const keys = new Set();
   const clock = new THREE.Clock();
   const eyeHeight = 1.69;
@@ -90,6 +88,7 @@ async function start() {
   function resize() {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5, Math.sqrt(1920 * 1080 / (innerWidth * innerHeight))));
     renderer.setSize(innerWidth, innerHeight, false);
     needsRender = true;
   }
@@ -120,11 +119,12 @@ async function start() {
   });
   enter.addEventListener('click', () => controls.lock());
   for (const button of viewpointButtons) {
-    button.disabled = false;
+    button.disabled = !views.has(button.dataset.view);
     button.addEventListener('click', () => goTo(button.dataset.view));
   }
 
-  goTo('cong');
+  resize();
+  goTo(canvas.dataset.startView);
   enter.textContent = 'Đi bộ';
   enter.disabled = false;
 
@@ -142,8 +142,8 @@ async function start() {
       if (keys.has('KeyA') || keys.has('ArrowLeft')) move.sub(right);
       const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
       move.normalize().multiplyScalar(dt * (running ? 7.7 : 4.5));
-      const nextX = THREE.MathUtils.clamp(camera.position.x + move.x, -103.5, 67.5);
-      const nextZ = THREE.MathUtils.clamp(camera.position.z + move.z, -86.5, 24);
+      const nextX = THREE.MathUtils.clamp(camera.position.x + move.x, limits.minX, limits.maxX);
+      const nextZ = THREE.MathUtils.clamp(camera.position.z + move.z, limits.minZ, limits.maxZ);
       if (!blocked(nextX, camera.position.z)) camera.position.x = nextX;
       if (!blocked(camera.position.x, nextZ)) camera.position.z = nextZ;
       updateShadow();
@@ -207,6 +207,7 @@ function prepareCampus(scene, root, renderer) {
   const colliders = [];
   const floors = [];
   const views = new Map();
+  let limits = { minX: -103.5, maxX: 67.5, minZ: -86.5, maxZ: 24 };
   const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   const scale = new THREE.Vector3();
   const position = new THREE.Vector3();
@@ -229,7 +230,7 @@ function prepareCampus(scene, root, renderer) {
         && materials.every((material) => !material.transparent);
       object.receiveShadow = true;
     }
-    if (data.walkCollider || Number.isFinite(data.floorStart)) {
+    if (data.walkLimits || data.walkCollider || Number.isFinite(data.floorStart)) {
       object.getWorldPosition(position);
       object.getWorldScale(scale);
       const area = {
@@ -238,7 +239,8 @@ function prepareCampus(scene, root, renderer) {
         minZ: position.z - scale.z,
         maxZ: position.z + scale.z,
       };
-      if (data.walkCollider) colliders.push(area);
+      if (data.walkLimits) limits = area;
+      else if (data.walkCollider) colliders.push(area);
       else floors.push({ ...area, start: data.floorStart, end: data.floorEnd, axis: data.floorAxis });
     }
     if (data.centralLight) {
@@ -253,5 +255,5 @@ function prepareCampus(scene, root, renderer) {
   });
   floors.sort((a, b) => (a.maxX - a.minX) * (a.maxZ - a.minZ)
     - (b.maxX - b.minX) * (b.maxZ - b.minZ));
-  return { colliders, floors, views };
+  return { colliders, floors, views, limits };
 }

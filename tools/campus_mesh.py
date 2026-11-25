@@ -1,5 +1,6 @@
 """Geometry and texture helpers for the Central Building Blender scene."""
 import math
+import random
 import struct
 import tempfile
 import zlib
@@ -29,6 +30,48 @@ def empty(name, group, position=(0, 0, 0), scale=(1, 1, 1), **properties):
     for key, value in properties.items():
         ob[key] = value
     return ob
+
+
+def walk_limits(group, x0, x1, y0, y1):
+    return empty('Giới hạn bản đồ', group, ((x0+x1)/2, (y0+y1)/2, 0),
+                 ((x1-x0)/2, (y1-y0)/2, 1), walkLimits=True)
+
+
+def view_marker(group, key, eye, target):
+    dx, dy, dz = (b-a for a, b in zip(eye, target))
+    return empty('Điểm quan sát '+key, group, eye, viewKey=key,
+                 viewYaw=math.atan2(-dx,dy), viewPitch=math.atan2(dz,math.hypot(dx,dy)))
+
+
+def strip(mesh, points, width, material, *, z=.018, offset=0):
+    """A horizontal ribbon with rounded-path joints and a constant width."""
+    vertices = []
+    for i, (x, y) in enumerate(points):
+        a = points[max(i-1,0)]
+        b = points[min(i+1,len(points)-1)]
+        dx, dy = b[0]-a[0], b[1]-a[1]
+        length = math.hypot(dx,dy)
+        for edge in (-width/2,width/2):
+            side = (offset+edge)/length
+            vertices.append((x-dy*side,y+dx*side,z))
+    mesh.add(vertices, [(2*i,2*i+2,2*i+3,2*i+1) for i in range(len(points)-1)], material)
+
+
+def arc(x, y, radius, start, end, segments=32):
+    return [(x+radius*math.cos(t),y+radius*math.sin(t))
+            for t in (start+(end-start)*i/segments for i in range(segments+1))]
+
+
+def grid_net(mesh, corners, spacing, thread, material):
+    """Two sets of crossed flat threads avoid a cylinder at every knot."""
+    a, b, c, d = (Vector(p) for p in corners)
+    for start, end, opposite_start, opposite_end in ((a,b,d,c),(a,d,b,c)):
+        direction = (end-start).normalized()*thread*.5
+        cells = max(1,round((end-start).length/spacing))
+        for i in range(cells+1):
+            t = i/cells
+            p, q = start.lerp(end,t), opposite_start.lerp(opposite_end,t)
+            mesh.sheet((p-direction,p+direction,q+direction,q-direction),material)
 
 
 def packed_image(name, pixels):
@@ -126,6 +169,9 @@ def tiled(name, base, pattern, metres, roughness=.85, *, metal=0, size=512):
         blades = noise(size, 110, 90)*.14
         warm = np.maximum(0, large+.11)*.13
         rgb = np.array(base)+ (blades+large*.11+mid*.116+dither*.05)[:, :, None] + warm[:, :, None]*np.array((1,.5,.14))
+    elif pattern == 'artificial turf':
+        fibres = noise(size,180,90)*.067 + mid*.031 + dither*.04
+        rgb = np.array(base) + fibres[:, :, None]
     elif pattern == 'bark':
         streaks = noise(size, 57, 5)*.23 + noise(size, 112, 25)*.12
         rgb = np.array(base)+(value+streaks)[:, :, None]
@@ -285,3 +331,49 @@ def text(name, words, position, mat, group, font, width, height, *,
     ob.rotation_euler=(tilt,0,yaw)
     ob.scale = (sx if fit_width else min(sx,sy),sy,1)
     return ob
+
+
+def foliage_material():
+    """A clustered foliage texture fills the crown between modeled leaves."""
+    size = 448
+    pixels = np.zeros((size,size,4), dtype=np.float32)
+    source = random.Random(9196)
+    for i in range(1230):
+        theta = source.uniform(0,math.tau)
+        rad = (source.random() ** .72) * size*.46
+        x = size*.5 + math.cos(theta)*rad
+        y = size*.5 + math.sin(theta)*rad
+        length = source.uniform(4.8,13.8)
+        width = length*source.uniform(.22,.48)
+        blade = source.uniform(0,math.tau)
+        x0,x1 = max(0,int(x-length-2)),min(size,int(x+length+3))
+        y0,y1 = max(0,int(y-length-2)),min(size,int(y+length+3))
+        cy,cx = np.mgrid[y0:y1,x0:x1]
+        u = ((cx-x)*math.cos(blade)+(cy-y)*math.sin(blade))/length
+        v = (-(cx-x)*math.sin(blade)+(cy-y)*math.cos(blade))/width
+        outline = abs(u)**1.7 + abs(v)**1.31 + .12*u*v
+        leaf = outline<1
+        tint=np.array(source.choice([(.186,.268,.072),(.216,.307,.094),(.139,.218,.071),
+                                     (.211,.291,.093),(.32,.39,.112),(.267,.341,.119)]))
+        rib=np.exp(-(v/.071)**2) * .052
+        shading=source.uniform(-.034,.033) + .062*(.5-u)*v + rib
+        patch=pixels[y0:y1,x0:x1]
+        patch[:,:,:3][leaf]=(tint+shading[:,:,None])[leaf]
+        patch[:,:,3][leaf]=1
+    image=packed_image('Cụm lá cây',pixels)
+    mat=surface('Cụm lá cây có gân',(.13,.22,.06),.79,image=image,opacity=.99,double=True)
+    nodes=mat.node_tree.nodes
+    mat.node_tree.links.new(nodes.get('Image Texture').outputs['Alpha'],nodes.get('Principled BSDF').inputs['Alpha'])
+    mat.surface_render_method='DITHERED'
+    mat['leafCutout']=True
+    return mat
+
+
+
+def leaf_spray(mesh, center, radius, angle, material):
+    for turn in (-.91,.18,1.23):
+        az=angle+turn
+        u=Vector((math.cos(az),math.sin(az),0))*radius
+        v=Vector((-.41*math.sin(az),.41*math.cos(az),.91))*radius*.94
+        mesh.add([center-u-v,center+u-v,center+u+v,center-u+v],
+                 [(0,1,2,3)],material,uv=[((0,0),(1,0),(1,1),(0,1))])

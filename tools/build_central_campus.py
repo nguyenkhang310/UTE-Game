@@ -6,13 +6,14 @@ import tempfile
 from pathlib import Path
 
 import bpy
-import numpy as np
 from mathutils import Vector
 
 HERE = Path(__file__).resolve().parent
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(HERE))
-from campus_mesh import Mesh, collection, empty, packed_image, surface, text, tiled
+from campus_mesh import Mesh, arc, collection, empty, foliage_material, leaf_spray, strip, surface, text, tiled, view_marker, walk_limits
+
+from campus_pitch import build_pitch
 
 ROOT = HERE.parent
 MAP = ROOT/'maps'/'trung-tam'
@@ -301,16 +302,22 @@ gate_text('Chữ GS25','GS25',33.38,1.91,4.43,2.04,.65,paper)
 gate_text('Chữ Highlands','HIGHLANDS',41.45,1.91,4.36,4.10,.47,paper)
 
 terrain=Mesh('Nền khuôn viên hành chính',land_group)
-terrain.span(((-120,76),(-37,96),(-.25,-.061)),turf)
+terrain.span(((-120,159),(-44,103),(-.25,-.061)),turf)
 terrain.finish(noShadow=True)
 
+left_approach=[(-59.35+15.55*t*t*(2-t),22.5-40.15*t) for t in (i/36 for i in range(37))]
 road=Mesh('Đường Võ Văn Ngân và các nhánh nội bộ',land_group)
 for x0,x1,y0,y1 in [
-    (-110,-70.52,-32,84),(-70.52,-64.3,16.3,35.8),(-64.3,-54.4,-13.0,80.2),
-    (54.4,64.3,-13.0,80.2),(-64.3,64.3,-22.4,-13.0),(-64.3,64.3,80.2,88.9),
+    (-110,-70.52,-32,84),(-70.52,-64.3,16.3,35.8),(-64.3,-54.4,22.5,80.2),
+    (54.4,64.3,-13.0,80.2),(-52.2,147.5,-22.4,-13.0),(-64.3,131.0,80.2,88.9),
+    (124.8,131.0,-13.0,80.2),(-49.0,-40.3,-33.5,-22.4),
     (-54.4,-9.0,28.35,35.46),(9.0,54.4,28.35,35.46),(-9.0,9.0,27.85,30.09),
 ]:
     road.span(((x0,x1),(y0,y1),(-.058,.001)),street)
+strip(road,left_approach,9.9,street,z=.002)
+# The southeast curb turns into the road below the pitch.
+corner=arc(71.30,-6.0,7.0,math.pi,1.5*math.pi,20)
+road.sheet(list(reversed([(64.3,-13.0,.002),*[(x,y,.002) for x,y in corner]])),street)
 road.finish(noShadow=True)
 
 paths=Mesh('Lối lát vàng, bó vỉa và sân kỷ niệm',land_group)
@@ -321,8 +328,11 @@ for x0,x1,y0,y1 in [
     (-70.48,-64.31,11.0,16.3),(-75.0,-70.71,63.30,82.4),
     (-75.0,-70.71,-34.5,-19.2),(-54.36,54.36,-12.95,-10.82),
     (-54.38,54.38,19.25,28.34),(-8.95,8.95,28.34,30.10),
-    (-4.05,4.05,-10.81,19.25),(-56.0,-54.38,-10.82,80.18),(54.38,56.0,-10.82,80.18),
+    (-4.05,4.05,-10.81,19.25),(-54.38,-52.6,22.5,80.18),(52.6,54.38,-10.82,80.18),
     (-53.96,53.96,78.25,80.19),
+    (64.38,68.78,-5.8,80.18),(68.78,124.69,76.68,80.18),
+    (68.92,124.79,-12.95,-10.0),(124.78,131.0,-12.94,-11.22),
+    (-35.5,122.6,-24.22,-22.44),
 ]:
     paths.span(((x0,x1),(y0,y1),(-.056,.052)),pavers)
     if max(x1-x0,y1-y0)>4:
@@ -338,20 +348,33 @@ for side in (-1,1):
            for t in [j*math.pi/22 for j in range(12)]]
     polygon=[(side*4.02,19.24-3.65,.054),*outer]
     paths.sheet(polygon if side>0 else list(reversed(polygon)),pavers)
+left_walk=left_approach[:33]
+for side in (-1,1):
+    strip(paths,left_walk,1.60,pavers,z=.054,offset=5.79*side)
+    strip(paths,left_walk,.135,cement,z=.111,offset=5.03*side)
+strip(paths,corner,1.38,pavers,z=.055,offset=.76)
+strip(paths,corner,.14,cement,z=.112,offset=.055)
 paths.finish(noShadow=True)
 
 markings=Mesh('Vạch qua đường, vạch đứt và nắp hố ga',land_group)
-for x in range(-54,55,5):
-    if abs(x)>8:
+for x in range(-42,143,5):
+    if abs(x)>8 and x<55:
         markings.box((x,31.81,.009),(1.6,.086,.005),asphalt_line)
     markings.box((x,-17.65,.009),(1.8,.102,.006),asphalt_line)
     markings.box((x,84.56,.009),(1.8,.102,.006),asphalt_line)
+for i in range(3,29,4):
+    strip(markings,left_approach[i:i+3],.095,asphalt_line,z=.011)
+for side in (-1,1):
+    strip(markings,left_approach[:31],.09,zebra,z=.014,offset=4.78*side)
+strip(markings,corner,.091,zebra,z=.015,offset=-.123)
 for y in range(-12,81,5):
     for x in (-59.35,59.35):
-        if abs(y-30)>3:
+        if abs(y-30)>3 and (x>0 or y>22.5):
             markings.box((x,y,.009),(.093,1.68,.006),asphalt_line)
 for x in (-59.35,59.35):
     for y in (26.65,38.38,74.1,-10.94):
+        if x<0 and y<0:
+            continue
         for i in range(8):
             xx=x+(i-3.5)*1.06
             markings.box((xx,y,.013),(.57,2.65,.008),zebra)
@@ -363,6 +386,12 @@ for x,y in [(-61.45,35.80),(-76.2,30.1),(52.2,32.8),(35.5,-20.1)]:
     markings.box((x,y,.013),(.82,.82,.013),stone)
     for j in range(9):
         markings.box((x,y+(j-4)*.080,.022),(.65,.028,.011),frame)
+for x in (-43.2,.04,56.6,128.0):
+    for i in range(7):
+        markings.box((x,-17.7+(i-3)*.99,.015),(2.70,.48,.009),zebra)
+for x in (-2.5,21.0,42.0):
+    for i in range(4):
+        markings.box((x+i*.34,-17.7,.015),(.105,7.55,.008),asphalt_line)
 markings.finish(noShadow=True)
 
 pavement_letters=collection('Chữ sơn trên sân',land_group)
@@ -583,6 +612,16 @@ def wing(side):
                     glazing.box((x+offset,y,z+1.265),(.041,.075,.68),steel)
             for k in range(6):
                 glazing.box((x,48.79,z+2.83+k*.109),(pitch-.68,.42,.038),white_metal)
+        # The pitch-side elevation has steel window bands and blade shading.
+        outside=outer+side*.431
+        for yy in (51.24,55.68,60.12,64.56,69.0,73.44):
+            glazing.box((outside,yy,z+1.91),(.116,3.37,1.29),frame)
+            for cell in range(4):
+                glazing.box((outside+side*.079,yy+(cell-1.5)*.81,z+1.93),
+                            (.049,.761,1.17),glass[(level+cell)%len(glass)])
+            for k in range(4):
+                glazing.box((outside+side*.15,yy,z+2.42+k*.15),(.22,3.39,.037),white_metal)
+        body.box((outside,62.33,z+.82),(.228,27.6,.145),cream)
         for j in range(steps+1):
             x=a+j*pitch
             body.box((x,48.66,z+1.98),(.57,.78,4.13),plaster)
@@ -874,52 +913,7 @@ dirt=tiled('Đất gốc cây',(.372,.302,.225),'granite',2.4)
 fauna_floor=Mesh('Đất chân cây và sỏi trong chậu',greenery)
 
 
-def detailed_leaf_material():
-    """A clustered foliage texture fills the crown between modeled leaves."""
-    size = 448
-    pixels = np.zeros((size,size,4), dtype=np.float32)
-    source = random.Random(9196)
-    for i in range(1230):
-        theta = source.uniform(0,math.tau)
-        rad = (source.random() ** .72) * size*.46
-        x = size*.5 + math.cos(theta)*rad
-        y = size*.5 + math.sin(theta)*rad
-        length = source.uniform(4.8,13.8)
-        width = length*source.uniform(.22,.48)
-        blade = source.uniform(0,math.tau)
-        x0,x1 = max(0,int(x-length-2)),min(size,int(x+length+3))
-        y0,y1 = max(0,int(y-length-2)),min(size,int(y+length+3))
-        cy,cx = np.mgrid[y0:y1,x0:x1]
-        u = ((cx-x)*math.cos(blade)+(cy-y)*math.sin(blade))/length
-        v = (-(cx-x)*math.sin(blade)+(cy-y)*math.cos(blade))/width
-        outline = abs(u)**1.7 + abs(v)**1.31 + .12*u*v
-        leaf = outline<1
-        tint=np.array(source.choice([(.186,.268,.072),(.216,.307,.094),(.139,.218,.071),
-                                     (.211,.291,.093),(.32,.39,.112),(.267,.341,.119)]))
-        rib=np.exp(-(v/.071)**2) * .052
-        shading=source.uniform(-.034,.033) + .062*(.5-u)*v + rib
-        patch=pixels[y0:y1,x0:x1]
-        patch[:,:,:3][leaf]=(tint+shading[:,:,None])[leaf]
-        patch[:,:,3][leaf]=1
-    image=packed_image('Cụm lá cây',pixels)
-    mat=surface('Cụm lá chi tiết quanh cổng',(.13,.22,.06),.79,image=image,opacity=.99,double=True)
-    nodes=mat.node_tree.nodes
-    mat.node_tree.links.new(nodes.get('Image Texture').outputs['Alpha'],nodes.get('Principled BSDF').inputs['Alpha'])
-    mat.surface_render_method='DITHERED'
-    mat['leafCutout']=True
-    return mat
-
-
-leaf_cards=detailed_leaf_material()
-
-
-def add_leaf_spray(mesh, center, radius, angle):
-    for turn in (-.91,.18,1.23):
-        az=angle+turn
-        u=Vector((math.cos(az),math.sin(az),0))*radius
-        v=Vector((-.41*math.sin(az),.41*math.cos(az),.91))*radius*.94
-        mesh.add([center-u-v,center+u-v,center+u+v,center-u+v],
-                 [(0,1,2,3)],leaf_cards,uv=[((0,0),(1,0),(1,1),(0,1))])
+leaf_cards=foliage_material()
 
 
 def broadleaf(name,x,y,h,spread,radius, *, sparse=False):
@@ -957,13 +951,17 @@ def broadleaf(name,x,y,h,spread,radius, *, sparse=False):
                 length=rng.uniform(.17,.41)*(1.22 if not sparse else .94)
                 leaves.leaf(base,(math.cos(az),math.sin(az),rng.uniform(-.54,.58)),length,
                             length*rng.uniform(.37,.66),rng.choice(greens))
-        if not sparse:
+        if sparse:
+            for k in range(4):
+                center=bend.lerp(tip,.33+k*.19) + b*((-1)**k)*spread*.14
+                leaf_spray(leaves,center,spread*(.38-k*.024),angle+k*.93,leaf_cards)
+        else:
             # Layer the silhouette at the tips, with flatter clusters below each spray.
             for k in range(5):
                 origin = bend.lerp(tip,.35+k*.145)
                 center = origin + b*((-1)**k)*spread*rng.uniform(.15,.32) + Vector((0,0,spread*.13))
                 if x<-62 and h>13:
-                    add_leaf_spray(leaves,center,spread*.27,angle+k*.84)
+                    leaf_spray(leaves,center,spread*.27,angle+k*.84,leaf_cards)
                 for count in range(48 if x>-60 else 100):
                     latitude = rng.uniform(-1,1)
                     az = rng.uniform(0,math.tau)
@@ -987,15 +985,15 @@ def broadleaf(name,x,y,h,spread,radius, *, sparse=False):
 
 trees=[
     (-66.61,42.6,19.5,8.18,.59),(-68.2,15.98,18.25,6.7,.48),
-    (-62.31,53.6,21.1,8.55,.44),(-64.75,48.1,22.4,8.3,.51),
-    (-68.05,55.71,17.1,7.31,.48),(-61.0,48.53,20.34,6.44,.48),
+    (-66.9,58.2,21.1,8.55,.44),(-66.5,48.1,22.4,8.3,.51),
+    (-68.05,55.71,17.1,7.31,.48),(-53.67,60.0,20.34,6.44,.48),
     (-66.07,37.48,16.25,5.55,.44),
-    (-60.8,26.3,13.77,4.96,.44),(-60.71,39.6,13.68,5.46,.39),
-    (-68.03,4.16,10.12,4.60,.35),(-61.6,9.08,12.2,4.85,.42),
+    (-50.85,14.1,13.77,4.96,.44),(-65.75,39.5,13.68,5.46,.39),
+    (-68.03,4.16,10.12,4.60,.35),(-64.0,9.08,12.2,4.85,.42),
     (-77.0,57.5,12.7,4.85,.36),(-82.8,-1.5,12.4,4.47,.37),
     (-57.2,36.93,11.5,4.5,.39),(-55.7,42.65,13.18,5.16,.45),
     (-48.5,10.4,12.88,5.3,.36),(-42.3,1.1,14.05,5.33,.41),
-    (-36.3,7.27,13.47,5.26,.38),(-48.2,-5.7,13.67,5.31,.41),
+    (-36.3,7.27,13.47,5.26,.38),(-41.3,-6.7,13.67,5.31,.41),
     (-32.0,-4.7,14.64,6.05,.47),(-25.8,12.51,11.36,4.34,.32),
     (-18.65,3.51,13.56,5.42,.38),(-12.1,-6.64,10.84,4.19,.33),
     (-10.66,9.36,10.57,4.38,.28),(7.45,-8.37,9.3,3.46,.32),
@@ -1049,7 +1047,7 @@ for side in (-1,1):
         palm(x,y,0,rng.uniform(7.20,9.38),rng.uniform(2.54,3.17))
         bounds(x-.22,x+.22,y-.22,y+.22)
 for x,y in [(-52.7,42.1),(-50.43,40.0),(51.2,42.01),(49.25,39.97),
-            (-55.5,17.6),(55.37,21.4),(34.4,-4.54),(-67.2,20.4)]:
+            (-49.8,17.6),(55.37,21.4),(34.4,-4.54),(-67.2,20.4)]:
     palm(x,y,0,rng.uniform(3.4,5.04),rng.uniform(1.52,2.04),thick=.153)
     bounds(x-.16,x+.16,y-.16,y+.16)
 for x,y in [(-5.5,49.2),(5.53,49.18),(5.58,54.21),(-5.6,54.19),(10.58,50.01),(-10.79,50.03)]:
@@ -1057,7 +1055,6 @@ for x,y in [(-5.5,49.2),(5.53,49.18),(5.58,54.21),(-5.6,54.19),(10.58,50.01),(-1
     bounds(x-.26,x+.26,y-.26,y+.26)
 palms.finish()
 palm_leaves.finish()
-fauna_floor.finish(noShadow=True)
 
 gardens=Mesh('Bồn hoa, bụi tròn, hàng viền và chậu đất nung',greenery)
 plant_detail=Mesh('Lá chét và hoa giấy',greenery)
@@ -1281,11 +1278,11 @@ for i,(x,y,angle) in enumerate([
 ]):
     car(x,y,angle,car_materials[i%4],i%3)
 
-context=Mesh('Nhà thấp cạnh đường và sân thể thao xa',street_group)
+context=Mesh('Nhà thấp cạnh đường hành chính',street_group)
 for x,y,w,d,h,material in [
     (-105.1,50.0,8,12,7.3,cream),(-105.2,63.0,8,10,9.0,plaster),
     (-105.1,10.3,8,10,5.2,wall_stone),(-104.9,-1.2,8,12,8.9,cream),
-    (-65.7,53,5.2,8,4.2,roof_mint),
+    (-68.2,53,4.4,8,4.2,roof_mint),
     (-55.36,89.94,16,4.1,7.2,plaster),(-27.67,91.5,17.9,5.2,5.1,cream),
     (34.0,91.87,20,7.1,7.0,roof_mint),
 ]:
@@ -1296,17 +1293,15 @@ for x,y,w,d,h,material in [
             yy=y+(j-1.5)*d*.223
             context.box((x+w/2+.021,yy,1.55+level*2.9),(.068,d*.17,1.31),glass_dark)
     bounds(x-w/2,x+w/2,y-d/2,y+d/2)
-field=surface('Cỏ sân thể thao xanh thẫm',(.07,.195,.091),.88)
-context.box((70.2,62.7,.008),(11.45,31.8,.070),field)
-for x in (65.0,75.6):
-    context.box((x,62.72,.047),(.069,30.05,.015),paper)
-for y in (47.7,77.72,62.72):
-    context.box((70.30,y,.048),(10.60,.074,.015),paper)
-for y in (47.44,77.85):
-    for x in (68.75,71.76):
-        context.tube([(x,y,0),(x,y,1.78)],.039,paper,8)
-    context.tube([(68.75,y,1.78),(71.76,y,1.78)],.039,paper,8)
 context.finish()
+
+build_pitch(bounds)
+for i,(x,y) in enumerate([(66.8,-3.4),(65.7,25.3),(66.6,45.4),(66.7,63.9),
+                           (74.7,78.2),(87.4,78.1),(103.2,78.2),(116.9,78.0),
+                           (126.7,13.5),(126.6,53.8),(76.1,-12),(110.9,-12)]):
+    broadleaf(f'Cây trước sân bóng {i+1:02}',x,y,8.6+(i%4)*1.05,3.6+(i%3)*.5,.25,sparse=True)
+
+fauna_floor.finish(noShadow=True)
 
 VIEWS={
     'cong': ((-101.2,28.7,1.69),(-70.50,27.9,4.03),20),
@@ -1315,15 +1310,15 @@ VIEWS={
     'toa-nha': ((0,-9.30,1.69),(0,48.19,19.7),18),
     'sanh': ((.81,48.20,FLOOR+1.69),(-1.85,58.04,FLOOR+1.48),14.5),
     'sanh-nhin-ra': ((.60,56.25,FLOOR+1.69),(-1.35,47.62,FLOOR+1.56),14.5),
-    'tren-cao': ((9,-85,123),(0,38,21.2),29.5),
+    'hanh-chinh': ((-57.7,12.5,1.69),(-52.5,31.95,2.3),21),
+    'san-bong': ((104,35.45,1.69),(58,44,4.1),17),
+    'tren-cao': ((28,-109,162),(29,30,5),30),
     'mat-sau': ((0,174.0,70),(0,71.2,27.2),29),
 }
-for key in ('cong','toa-nha','sanh'):
+walk_limits(physics,-103.5,146,-33,89.2)
+for key in ('cong','toa-nha','sanh','hanh-chinh','san-bong'):
     eye,target,_=VIEWS[key]
-    direction=Vector(target)-Vector(eye)
-    empty('Điểm quan sát '+key,physics,eye,viewKey=key,
-          viewYaw=math.atan2(-direction.x,direction.y),
-          viewPitch=math.atan2(direction.z,math.hypot(direction.x,direction.y)))
+    view_marker(physics,key,eye,target)
 
 # Export an independent game asset. Preview lights and cameras only exist in the .blend.
 asset=MAP/'trung-tam.glb'
@@ -1417,7 +1412,10 @@ bpy.context.view_layer.objects.active=None
 bpy.context.preferences.filepaths.save_version=0
 bpy.ops.wm.save_as_mainfile(filepath=str(ROOT/'toa-nha-trung-tam.blend'),compress=True)
 if '--preview' in sys.argv:
+    selected=sys.argv[sys.argv.index('--preview')+1:]
     for key,ob in cameras.items():
+        if selected and key not in selected:
+            continue
         scene.camera=ob
         if key=='mat-sau':
             sun.rotation_euler=Vector((.32,-.51,-.77)).to_track_quat('-Z','Y').to_euler()

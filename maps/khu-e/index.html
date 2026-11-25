@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#142632">
+  <title>Khu E · HCMUTE</title>
+  <link rel="stylesheet" href="../trung-tam/viewer.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "../../vendor/three/three.module.js",
+        "three/addons/": "../../vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body class="zone-e">
+  <canvas id="scene" aria-label="Khu E, Khoa Cơ khí Chế tạo máy và nhà thể thao"
+    data-model="./khu-e.glb" data-start-view="loi-vao"></canvas>
+  <div class="aim" aria-hidden="true"></div>
+  <main id="menu" class="menu">
+    <div class="menu-panel">
+      <a class="back" href="../index.html">← Chọn bản đồ</a>
+      <h1>Khu E</h1>
+      <p class="map-description">Khoa Cơ khí Chế tạo máy, vườn, xưởng và nhà thể thao</p>
+      <div class="viewpoints" aria-label="Điểm bắt đầu">
+        <button type="button" data-view="loi-vao" aria-pressed="true" disabled>Lối vào</button>
+        <button type="button" data-view="khoa" aria-pressed="false" disabled>Khoa Cơ khí</button>
+        <button type="button" data-view="vuon" aria-pressed="false" disabled>Vườn</button>
+        <button type="button" data-view="nha-the-thao" aria-pressed="false" disabled>Nhà thể thao</button>
+        <button type="button" data-view="xuong" aria-pressed="false" disabled>Xưởng cơ khí</button>
+      </div>
+      <div class="entry">
+        <button id="enter" class="enter" type="button" disabled>Đang tải…</button>
+        <span class="controls"><kbd>WASD</kbd> đi · <kbd>Chuột</kbd> nhìn · <kbd>Esc</kbd> mở menu</span>
+      </div>
+      <p class="notice" id="notice" role="status"></p>
+    </div>
+  </main>
+  <script type="module" src="../trung-tam/viewer.js"></script>
+</body>
+</html>

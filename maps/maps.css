@@ -50,7 +50,7 @@
 
 .map-options {
   display: grid;
-  grid-template-columns: 1.55fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: stretch;
   gap: 1rem;
 }
@@ -85,6 +85,7 @@
 }
 
 .map-card img { object-fit: cover; }
+.zone-e-card img { object-position: 52% center; }
 .map-card::after {
   content: '';
   background: linear-gradient(0deg, #0a151e 4%, #0b1720d1 25%, transparent 78%);
