@@ -19,9 +19,9 @@ Dùng URL có `index.html` cho các trang trong `/maps/` vì máy chủ chỉ t�
 ## Khu B
 
 - `src/config.js` giữ điểm vào, giới hạn chơi, vị trí miếu, tốc độ, thông số đèn pin và ngân sách render. `src/main.js` khởi tạo game, gắn bàn phím và cập nhật mỗi khung hình.
-- `src/world/worldLoader.js` đọc GLB, va chạm, cao độ, mốc đèn và hướng mặt thờ. `src/player/player.js` xử lý di chuyển, khóa chuột, bậc thềm và vòng lặp khi đi quá giới hạn.
+- `src/world/worldLoader.js` đọc GLB, va chạm, cao độ, mốc đèn và hướng mặt thờ. `walkCollider` chỉ mô tả mặt bằng, nên loader đo đỉnh vật cản từ hình học lần đầu người chơi chạm vào. Tường lửng, lan can, ghế và bồn cây thấp hơn đỉnh nhảy (khoảng 1 m, chỉnh bằng `jumpSpeed` và `gravity`) có thể nhảy qua hoặc đứng lên. Vật thể kéo cao quá 2,2 m so với sàn luôn chặn. `src/player/player.js` xử lý di chuyển, khóa chuột, bậc thềm và vòng lặp khi đi quá giới hạn.
 - `src/world/shrine.js` điều khiển lửa, khói, lời thì thầm và bóng lướt qua. `src/audio/audio.js` và `src/ui/hud.js` xử lý âm thanh và giao diện nhắc tương tác.
-- Bấm nút vào game, dùng WASD và chuột để đi, Shift để chạy, F để bật hoặc tắt đèn, E để thắp nhang khi có lời nhắc. Alt hoặc Esc nhả chuột.
+- Bấm nút vào game, dùng WASD và chuột để đi, Shift để chạy, Space để nhảy, F để bật hoặc tắt đèn, E để thắp nhang khi có lời nhắc. Alt hoặc Esc nhả chuột.
 
 ### Mốc bố trí cần đối chiếu
 
@@ -51,7 +51,7 @@ Dùng URL có `index.html` cho các trang trong `/maps/` vì máy chủ chỉ t�
 
 Hai builder ban ngày dùng chung các helper hình học và vật liệu trong `tools/campus_mesh.py`.
 
-Dùng Blender nền để dựng lại cảnh khi thay đổi hình học. Các script dùng `bpy` và `numpy` trong Blender. Dự án đã được dựng bằng Blender 5.3. Trên macOS, nếu lệnh `blender` chưa có trên PATH, dùng `/Applications/Blender.app/Contents/MacOS/Blender`. Builder Trung tâm hiện đọc font từ `/System/Library/Fonts/Supplemental` và dùng ảnh phù hiệu trong `maps/trung-tam/`. Khi chạy trên hệ điều hành khác, kiểm tra lại đường dẫn font.
+Dùng Blender nền để dựng lại cảnh khi thay đổi hình học. Các script dùng `bpy` và `numpy` trong Blender. Dự án đã được dựng bằng Blender 5.3. Trên macOS, nếu lệnh `blender` chưa có trên PATH, dùng `/Applications/Blender.app/Contents/MacOS/Blender`. Trên Windows, dùng `"C:\Program Files\Blender Foundation\Blender 5.3\blender.exe"`. Hai builder đọc font Arial và Times từ `/System/Library/Fonts/Supplemental` trên macOS hoặc `C:\Windows\Fonts` trên Windows. Builder Trung tâm dùng ảnh phù hiệu trong `maps/trung-tam/`.
 
 ```bash
 blender --background --python-exit-code 1 --python tools/build_courtyard.py

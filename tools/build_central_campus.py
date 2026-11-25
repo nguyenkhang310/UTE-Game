@@ -90,11 +90,19 @@ cloth = {name:surface(f'Cờ · {name}', c, .79, double=True) for name,c in {
     'lục':(.043,.382,.329),'lơ':(.015,.328,.632),'trắng':(.88,.882,.80),
     'cam':(.90,.28,.038),'đen':(.066,.072,.086)
 }.items()}
-FONT_DIR = Path('/System/Library/Fonts/Supplemental')
-bold = bpy.data.fonts.load(str(FONT_DIR/'Arial Bold.ttf'))
-regular = bpy.data.fonts.load(str(FONT_DIR/'Arial.ttf'))
-serif = bpy.data.fonts.load(str(FONT_DIR/'Times New Roman Bold.ttf'))
-italic = bpy.data.fonts.load(str(FONT_DIR/'Arial Bold Italic.ttf'))
+def system_font(mac_name, windows_name):
+    """Tìm cùng một font Arial/Times trên macOS hoặc Windows."""
+    for path in (Path('/System/Library/Fonts/Supplemental')/mac_name,
+                 Path('C:/Windows/Fonts')/windows_name):
+        if path.is_file():
+            return bpy.data.fonts.load(str(path))
+    raise FileNotFoundError(f'Không tìm thấy font {mac_name} / {windows_name}')
+
+
+bold = system_font('Arial Bold.ttf', 'arialbd.ttf')
+regular = system_font('Arial.ttf', 'arial.ttf')
+serif = system_font('Times New Roman Bold.ttf', 'timesbd.ttf')
+italic = system_font('Arial Bold Italic.ttf', 'arialbi.ttf')
 
 GATE_X, GATE_Y = -70.5, 27.0
 BUILDING_FRONT, BUILDING_BACK = 47.7, 77.6

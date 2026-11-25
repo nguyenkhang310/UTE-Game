@@ -64,7 +64,7 @@ export async function loadWorld(scene, renderer, onProgress) {
         Math.abs(child.scale.z),
         0.8,
       );
-      colliders.push({ type: 'circle', x: center.x, z: center.z, r: 0.5 * scale });
+      colliders.push({ type: 'circle', x: center.x, z: center.z, r: 0.5 * scale, top: Infinity });
       return;
     }
 
@@ -77,6 +77,7 @@ export async function loadWorld(scene, renderer, onProgress) {
         maxX: box.max.x,
         minZ: box.min.z,
         maxZ: box.max.z,
+        top: child === shrine ? Infinity : box.max.y,
       });
     }
   });
@@ -124,6 +125,7 @@ export async function loadWorld(scene, renderer, onProgress) {
     shrineFront,
     colliders,
     floors,
+    measureTop: createTopMeasure(root, floors),
     updateLighting: createLocalLighting(scene, lamps),
     // Khe giữa hai thân cây phía sau miếu, nơi bóng đen sẽ lướt qua.
     shadowPath: {
@@ -131,6 +133,79 @@ export async function loadWorld(scene, renderer, onProgress) {
       xTo: CONFIG.shrine.x + 4.8,
       z: CONFIG.shrine.z - 2.3 * shrineFront.z,
     },
+  };
+}
+
+// Cao độ sàn tại (x, z) theo các vùng floorStart/floorEnd, vùng nhỏ được ưu tiên.
+export function sampleFloor(floors, x, z) {
+  for (const floor of floors) {
+    if (x >= floor.minX && x <= floor.maxX && z >= floor.minZ && z <= floor.maxZ) {
+      const across = floor.axis !== 'depth';
+      const offset = across ? x - floor.minX : floor.maxZ - z;
+      const span = across ? floor.maxX - floor.minX : floor.maxZ - floor.minZ;
+      return THREE.MathUtils.lerp(floor.start, floor.end, offset / span);
+    }
+  }
+  return 0;
+}
+
+// walkCollider trong GLB chỉ có mặt bằng, không có chiều cao. Hàm này đo đỉnh vật cản
+// từ tam giác thật nằm trong vùng va chạm, để người chơi nhảy qua được tường thấp,
+// lan can, ghế, bồn cây. Tam giác nào kéo dài quá `reach` mét trên sàn (tường, cột,
+// thân cây) làm vật cản thành không vượt được. Kết quả được Player lưu lại theo collider.
+function createTopMeasure(root, floors, reach = 2.2) {
+  let meshes = null;
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+
+  const isVisible = (object) => {
+    for (let node = object; node; node = node.parent) if (!node.visible) return false;
+    return true;
+  };
+
+  return (area) => {
+    if (!meshes) {
+      meshes = [];
+      root.traverse((object) => {
+        if (object.isMesh && object.geometry?.attributes.position && isVisible(object)) {
+          meshes.push({ object, box: new THREE.Box3().setFromObject(object) });
+        }
+      });
+    }
+
+    const inset = 0.02;
+    const x0 = area.minX + inset, x1 = area.maxX - inset;
+    const z0 = area.minZ + inset, z1 = area.maxZ - inset;
+    const base = Math.min(
+      sampleFloor(floors, x0, z0), sampleFloor(floors, x1, z0),
+      sampleFloor(floors, x0, z1), sampleFloor(floors, x1, z1),
+      sampleFloor(floors, (x0 + x1) / 2, (z0 + z1) / 2),
+    );
+    const cap = base + reach;
+    let top = -Infinity;
+
+    for (const { object, box } of meshes) {
+      if (box.max.x < x0 || box.min.x > x1 || box.max.z < z0 || box.min.z > z1 || box.min.y > cap) continue;
+      const position = object.geometry.attributes.position;
+      const index = object.geometry.index;
+      const count = index ? index.count : position.count;
+      const matrix = object.matrixWorld;
+      for (let i = 0; i < count; i += 3) {
+        a.fromBufferAttribute(position, index ? index.getX(i) : i).applyMatrix4(matrix);
+        b.fromBufferAttribute(position, index ? index.getX(i + 1) : i + 1).applyMatrix4(matrix);
+        c.fromBufferAttribute(position, index ? index.getX(i + 2) : i + 2).applyMatrix4(matrix);
+        if (Math.max(a.x, b.x, c.x) < x0 || Math.min(a.x, b.x, c.x) > x1) continue;
+        if (Math.max(a.z, b.z, c.z) < z0 || Math.min(a.z, b.z, c.z) > z1) continue;
+        const low = Math.min(a.y, b.y, c.y);
+        const high = Math.max(a.y, b.y, c.y);
+        if (low >= cap || high <= base + 0.03) continue;
+        if (high > cap) return Infinity;
+        top = Math.max(top, high);
+      }
+    }
+    // Không thấy hình học nào: đây là vách chặn vô hình, giữ nguyên tác dụng chặn.
+    return top === -Infinity ? Infinity : top;
   };
 }
 

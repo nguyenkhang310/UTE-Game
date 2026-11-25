@@ -380,8 +380,9 @@ def floor(x0, x1, y0, y1, low, high, *, axis="x"):
 
 
 
-font_path = Path('/System/Library/Fonts/Supplemental/Arial Bold.ttf')
-sign_font = bpy.data.fonts.load(str(font_path)) if font_path.is_file() else None
+font_path = next((path for path in (Path('/System/Library/Fonts/Supplemental/Arial Bold.ttf'),
+                                    Path('C:/Windows/Fonts/arialbd.ttf')) if path.is_file()), None)
+sign_font = bpy.data.fonts.load(str(font_path)) if font_path else None
 
 def wing(group, name, x, y, length, depth, floors, side, *, chemistry=False):
     at = coordinates(x, y, side)
@@ -1626,7 +1627,11 @@ def hanging_crown(x,y,h,radius):
     collider(x-.18,x+.18,y-.18,y+.18)
 
 
-def plumeria(x,y,h,size,phase):
+def plumeria(x,y,h,size,phase,*,keep=True):
+    # keep=False vẫn rút số ngẫu nhiên như cây thật để các cây dựng sau giữ nguyên hình,
+    # nhưng bỏ hình học và va chạm.
+    vegetation,foliage=(globals()['vegetation'],globals()['foliage']) if keep else \
+        (Geometry('bỏ',trees),Geometry('bỏ',trees))
     p=Vector((x,y,-.06))
     q=Vector((math.cos(phase),math.sin(phase),0))
     k=Vector((-q.y,q.x,0))
@@ -1651,7 +1656,8 @@ def plumeria(x,y,h,size,phase):
                 angle=theta+leaf*1.15
                 foliage.leaf(tip+Vector((rng.uniform(-.075,.075),rng.uniform(-.075,.075),0)),
                              (math.cos(angle),math.sin(angle),.18),rng.uniform(.19,.37),.076,rng.choice(leaf_mats))
-    collider(x-.32,x+.32,y-.32,y+.32)
+    if keep:
+        collider(x-.32,x+.32,y-.32,y+.32)
 
 
 palm(-5.49,-8.04,4.31,2.39)
@@ -1663,7 +1669,8 @@ for i,(x,y,h,r) in enumerate([
     (-9.94,-18.2,4.85,2.26),(-9.88,-5.64,5.4,2.49),(-1.38,-7.37,5.02,2.63),
     (-27.4,-29.3,5.99,3.42),(-37.10,-28.5,5.18,3.21),(-31.50,-37.1,4.92,2.52)
 ]):
-    plumeria(x,y,h,r,i*.98)
+    # Cây (-12.15,-19.04) mọc giữa hành lang khối B, chắn lối đi nên bỏ.
+    plumeria(x,y,h,r,i*.98,keep=(x,y)!=(-12.15,-19.04))
 vegetation.finish()
 foliage.finish()
 
@@ -1687,9 +1694,10 @@ for i,(x,y,h,r,w,gray) in enumerate([
 for i,y in enumerate((-19.76,-16.1,-11.23,-7.85)):
     bench(f'Ghế đá sát lối bê tông {i+1}',-10.13,y,math.pi/2)
 bench('Ghế đá trắng cạnh ngã rẽ',-4.72,-24.53,.10)
-for i,(x,y,a) in enumerate([(.03,-17.02,-math.pi/2),(.03,-9.83,-math.pi/2),
+# Ghế số 1 ở (.03,-17.02) từng đè lên tam cấp sân trong nên đã bỏ; giữ số thứ tự các ghế còn lại.
+for i,(x,y,a) in enumerate([(.03,-9.83,-math.pi/2),
                             (-28.97,-25.51,.12),(-32.28,-26.11,-.04),(-35.45,-31.0,.84),
-                            (-37.91,-37.95,.25),(-28.15,-39.44,-.75),(-40.36,-29.13,.20)]):
+                            (-37.91,-37.95,.25),(-28.15,-39.44,-.75),(-40.36,-29.13,.20)],start=1):
     bench(f'Ghế đá trong vườn {i+1}',x,y,a,brown=i in (0,3,6))
 for x,y,brown in [(-35.46,-26.81,True),(-39.14,-38.11,False),(-31.61,-39.13,True),(-39.96,-27.22,False)]:
     seating(x,y,brown)
