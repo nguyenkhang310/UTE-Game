@@ -18,7 +18,7 @@ Dùng đầy đủ `/maps/trung-tam/index.html` vì máy chủ chỉ tự mở `
 ## Khu B
 
 - `src/config.js` giữ điểm vào, giới hạn chơi, vị trí miếu, tốc độ, thông số đèn pin và ngân sách render. `src/main.js` khởi tạo game, gắn bàn phím và cập nhật mỗi khung hình.
-- `src/world/worldLoader.js` đọc GLB, va chạm, cao độ, mốc đèn và hướng mặt thờ. `src/player/player.js` xử lý di chuyển, khóa chuột, bậc thềm và vòng lặp khi đi quá giới hạn.
+- `src/world/worldLoader.js` đọc GLB, va chạm, cao độ, mốc đèn và hướng mặt thờ. `walkCollider` chỉ mô tả mặt bằng, nên loader đo đỉnh vật cản từ hình học lần đầu người chơi chạm vào. Tường lửng, lan can, ghế và bồn cây thấp hơn đỉnh nhảy (khoảng 1 m, chỉnh bằng `jumpSpeed` và `gravity`) có thể nhảy qua hoặc đứng lên. Vật thể kéo cao quá 2,2 m so với sàn luôn chặn. `src/player/player.js` xử lý di chuyển, khóa chuột, bậc thềm và vòng lặp khi đi quá giới hạn.
 - `src/world/shrine.js` điều khiển lửa, khói, lời thì thầm và bóng lướt qua. `src/audio/audio.js` và `src/ui/hud.js` xử lý âm thanh và giao diện nhắc tương tác.
 - Bấm nút vào game, dùng WASD và chuột để đi, Shift để chạy, F để bật hoặc tắt đèn, E để thắp nhang khi có lời nhắc. Alt hoặc Esc nhả chuột.
 

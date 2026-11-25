@@ -54,6 +54,7 @@ try {
   player = new Player(camera, {
     colliders: world.colliders,
     floors: world.floors,
+    measureTop: world.measureTop,
     onLock: () => {
       hud.hideOverlay();
       if (!hasShownIntro) {

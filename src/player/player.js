@@ -1,16 +1,22 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { CONFIG } from '../config.js';
+import { sampleFloor } from '../world/worldLoader.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
+// Chênh lệch nhỏ hơn mức này coi như bước lên được, không cần nhảy.
+const STEP_HEIGHT = 0.08;
+// Sàn hụt xuống quá mức này thì rơi theo trọng lực thay vì trượt mượt xuống.
+const FALL_DROP = 0.3;
 
-// Điều khiển góc nhìn thứ nhất: WASD, Alt khoá chuột, va chạm và
+// Điều khiển góc nhìn thứ nhất: WASD, Space nhảy, Alt khoá chuột, va chạm và
 // vòng lặp không gian ở hai đầu vườn.
 export class Player {
-  constructor(camera, { colliders, floors = [], onLock, onUnlock, onLoop, onFootstep }) {
+  constructor(camera, { colliders, floors = [], measureTop, onLock, onUnlock, onLoop, onFootstep }) {
     this.camera = camera;
     this.colliders = colliders;
     this.floors = floors;
+    this.measureTop = measureTop;
     this.onLock = onLock;
     this.onUnlock = onUnlock;
     this.onLoop = onLoop;
@@ -21,6 +27,11 @@ export class Player {
     this.bobPhase = 0;
     this.lastFootstep = 0;
     this.loopCooldown = 0;
+    // Chuyển động dọc: cao độ bàn chân, vận tốc rơi và trạng thái chạm đất.
+    this.feetY = 0;
+    this.verticalVelocity = 0;
+    this.grounded = true;
+    this.jumpQueued = false;
 
     this.controls = new PointerLockControls(camera, document.body);
     this.controls.minPolarAngle = 0.12;
@@ -28,6 +39,7 @@ export class Player {
     this.controls.addEventListener('lock', () => this.onLock?.());
     this.controls.addEventListener('unlock', () => {
       this.keys.clear();
+      this.jumpQueued = false;
       this.velocity.set(0, 0, 0);
       this.onUnlock?.();
     });
@@ -51,7 +63,10 @@ export class Player {
   }
 
   teleport(x, z, yaw = 0) {
-    this.camera.position.set(x, CONFIG.eyeHeight + this._floorHeight(x, z), z);
+    this.feetY = sampleFloor(this.floors, x, z);
+    this.verticalVelocity = 0;
+    this.grounded = true;
+    this.camera.position.set(x, this.feetY + CONFIG.eyeHeight, z);
     this.camera.rotation.set(0, yaw, 0, 'YXZ');
     this.velocity.set(0, 0, 0);
   }
@@ -92,7 +107,7 @@ export class Player {
 
     // Nhịp bước chân + nhấp nhô đầu.
     const planarSpeed = Math.hypot(this.velocity.x, this.velocity.z);
-    const moving = this.controls.isLocked && planarSpeed > 0.35;
+    const moving = this.controls.isLocked && planarSpeed > 0.35 && this.grounded;
     if (moving) {
       this.bobPhase += dt * planarSpeed * 2.1;
       if (this.bobPhase - this.lastFootstep > Math.PI) {
@@ -105,10 +120,38 @@ export class Player {
 
     const bob = Math.sin(this.bobPhase * 2) * 0.035 * Math.min(1, planarSpeed / 2);
     this._handleSpatialLoop(dt);
+    this._updateVertical(dt);
+    this.camera.position.y = this.feetY + CONFIG.eyeHeight + bob;
+  }
 
+  _updateVertical(dt) {
     const { x, z } = this.camera.position;
-    const targetHeight = CONFIG.eyeHeight + this._floorHeight(x, z) + bob;
-    this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, targetHeight, 18, dt);
+    const support = this._supportHeight(x, z);
+
+    if (this.grounded) {
+      if (this.jumpQueued && this.controls.isLocked) {
+        this.grounded = false;
+        this.verticalVelocity = CONFIG.jumpSpeed;
+      } else if (support < this.feetY - FALL_DROP) {
+        // Bước ra khỏi mép bồn, ghế, lan can: rơi xuống.
+        this.grounded = false;
+        this.verticalVelocity = 0;
+      } else {
+        this.feetY = THREE.MathUtils.damp(this.feetY, support, 18, dt);
+      }
+    }
+    this.jumpQueued = false;
+    if (this.grounded) return;
+
+    this.verticalVelocity -= CONFIG.gravity * dt;
+    this.feetY += this.verticalVelocity * dt;
+    if (this.verticalVelocity <= 0 && this.feetY <= support) {
+      this.feetY = support;
+      this.verticalVelocity = 0;
+      this.grounded = true;
+      // Tiếng tiếp đất.
+      this.onFootstep?.(true);
+    }
   }
 
   _moveWithCollisions(dx, dz) {
@@ -123,35 +166,47 @@ export class Player {
   }
 
   _floorHeight(x, z) {
-    for (const floor of this.floors) {
-      if (x >= floor.minX && x <= floor.maxX && z >= floor.minZ && z <= floor.maxZ) {
-        const across = floor.axis !== 'depth';
-        const offset = across ? x - floor.minX : floor.maxZ - z;
-        const span = across ? floor.maxX - floor.minX : floor.maxZ - floor.minZ;
-        const t = offset / span;
-        return THREE.MathUtils.lerp(floor.start, floor.end, t);
+    return sampleFloor(this.floors, x, z);
+  }
+
+  // Mặt đứng dưới chân: sàn, hoặc đỉnh vật thấp (ghế, bồn, lan can) mà chân đang ở trên.
+  _supportHeight(x, z) {
+    let height = this._floorHeight(x, z);
+    const margin = CONFIG.playerRadius * 0.5;
+    for (const c of this.colliders) {
+      if (c.type === 'circle' || !Number.isFinite(c.top)) continue;
+      if (c.top <= height || c.top > this.feetY + STEP_HEIGHT) continue;
+      if (x > c.minX - margin && x < c.maxX + margin && z > c.minZ - margin && z < c.maxZ + margin) {
+        height = c.top;
       }
     }
-    return 0;
+    return height;
+  }
+
+  _topOf(c) {
+    if (c.top === undefined) c.top = this.measureTop ? this.measureTop(c) : Infinity;
+    return c.top;
+  }
+
+  _overlaps(c, x, z, radius) {
+    if (c.type === 'circle') {
+      const dx = x - c.x;
+      const dz = z - c.z;
+      const reach = c.r + radius;
+      return dx * dx + dz * dz < reach * reach;
+    }
+    return x > c.minX - radius && x < c.maxX + radius && z > c.minZ - radius && z < c.maxZ + radius;
   }
 
   _blocked(x, z, radius) {
+    const { x: currentX, z: currentZ } = this.camera.position;
     for (const c of this.colliders) {
-      if (c.type === 'circle') {
-        const dx = x - c.x;
-        const dz = z - c.z;
-        const reach = c.r + radius;
-        if (dx * dx + dz * dz < reach * reach) return true;
-      } else {
-        if (
-          x > c.minX - radius &&
-          x < c.maxX + radius &&
-          z > c.minZ - radius &&
-          z < c.maxZ + radius
-        ) {
-          return true;
-        }
-      }
+      if (!this._overlaps(c, x, z, radius)) continue;
+      // Chân đã cao hơn đỉnh vật cản: nhảy qua hoặc đang đứng trên nó.
+      if (this._topOf(c) <= this.feetY + STEP_HEIGHT) continue;
+      // Lỡ đang chồng lên vật cản (vừa rơi xuống sát mép) thì vẫn cho đi ra.
+      if (this._overlaps(c, currentX, currentZ, radius)) continue;
+      return true;
     }
     return false;
   }
@@ -180,6 +235,14 @@ export class Player {
       event.stopPropagation();
       if (this.controls.isLocked) this.controls.unlock();
       else this.lock();
+      return;
+    }
+
+    if (event.code === 'Space') {
+      if (this.controls.isLocked) {
+        event.preventDefault();
+        if (!event.repeat) this.jumpQueued = true;
+      }
       return;
     }
 

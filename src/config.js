@@ -13,6 +13,9 @@ export const CONFIG = {
   walkSpeed: 3.1,
   runSpeed: 4.8,
   acceleration: 11,
+  // Đỉnh nhảy = jumpSpeed² / (2 · gravity) ≈ 1,0 m, đủ qua lan can hành lang cao ~0,9 m.
+  jumpSpeed: 6.6,
+  gravity: 22,
 
   // Không gian chơi
   bounds: {
