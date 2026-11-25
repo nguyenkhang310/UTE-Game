@@ -380,8 +380,9 @@ def floor(x0, x1, y0, y1, low, high, *, axis="x"):
 
 
 
-font_path = Path('/System/Library/Fonts/Supplemental/Arial Bold.ttf')
-sign_font = bpy.data.fonts.load(str(font_path)) if font_path.is_file() else None
+font_path = next((path for path in (Path('/System/Library/Fonts/Supplemental/Arial Bold.ttf'),
+                                    Path('C:/Windows/Fonts/arialbd.ttf')) if path.is_file()), None)
+sign_font = bpy.data.fonts.load(str(font_path)) if font_path else None
 
 def wing(group, name, x, y, length, depth, floors, side, *, chemistry=False):
     at = coordinates(x, y, side)

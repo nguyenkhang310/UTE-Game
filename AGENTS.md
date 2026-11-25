@@ -41,7 +41,7 @@ Dùng đầy đủ `/maps/trung-tam/index.html` vì máy chủ chỉ tự mở `
 | Khu B | `tools/build_courtyard.py` | `khu-b-mo-rong.blend`, `assets/khu-b-courtyard.glb` |
 | Trung tâm | `tools/build_central_campus.py` và `tools/campus_mesh.py` | `toa-nha-trung-tam.blend`, `maps/trung-tam/trung-tam.glb` |
 
-Dùng Blender nền để dựng lại cảnh khi thay đổi hình học. Các script dùng `bpy` và `numpy` trong Blender. Dự án đã được dựng bằng Blender 5.3. Trên macOS, nếu lệnh `blender` chưa có trên PATH, dùng `/Applications/Blender.app/Contents/MacOS/Blender`. Builder Trung tâm hiện đọc font từ `/System/Library/Fonts/Supplemental` và dùng ảnh phù hiệu trong `maps/trung-tam/`. Khi chạy trên hệ điều hành khác, kiểm tra lại đường dẫn font.
+Dùng Blender nền để dựng lại cảnh khi thay đổi hình học. Các script dùng `bpy` và `numpy` trong Blender. Dự án đã được dựng bằng Blender 5.3. Trên macOS, nếu lệnh `blender` chưa có trên PATH, dùng `/Applications/Blender.app/Contents/MacOS/Blender`. Trên Windows, dùng `"C:\Program Files\Blender Foundation\Blender 5.3\blender.exe"`. Hai builder đọc font Arial và Times từ `/System/Library/Fonts/Supplemental` trên macOS hoặc `C:\Windows\Fonts` trên Windows. Builder Trung tâm dùng ảnh phù hiệu trong `maps/trung-tam/`.
 
 ```bash
 blender --background --python-exit-code 1 --python tools/build_courtyard.py
