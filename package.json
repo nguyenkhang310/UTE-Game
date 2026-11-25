@@ -1,0 +1,21 @@
+{
+  "name": "hcmute-khu-vuon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Demo 3D góc nhìn thứ nhất: khu B & miếu thờ HCMUTE ban đêm",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs"
+  },
+  "keywords": [
+    "three.js",
+    "webgl",
+    "horror",
+    "hcmute"
+  ],
+  "license": "UNLICENSED",
+  "dependencies": {
+    "three": "0.169.0"
+  }
+}

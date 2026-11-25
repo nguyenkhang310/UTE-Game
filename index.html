@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07090d" />
+  <title>Khu B vào buổi tối · HCMUTE</title>
+  <link rel="stylesheet" href="./styles/main.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="vignette"></div>
+  <div id="grain"></div>
+  <div id="flash"></div>
+
+  <div id="hud">
+    <div class="hud-top">
+      <p id="location">HCMUTE · KHU B</p>
+      <p id="torch">ĐÈN PIN <b>TẮT</b> <span>[F]</span></p>
+    </div>
+
+    <div id="reticle"></div>
+
+    <div class="hud-bottom">
+      <p id="prompt"></p>
+      <p id="subtitle"></p>
+    </div>
+  </div>
+
+  <div id="overlay">
+    <div class="panel">
+      <p class="kicker" id="overlay-kicker">ĐẠI HỌC CÔNG NGHỆ KỸ THUẬT TP.HCM · KHU B</p>
+      <h1 id="overlay-title">Đừng đi quá xa</h1>
+      <p class="copy" id="overlay-copy">
+        Đêm nay khu B thật yên ắng. Có một ngôi miếu, có giọng của môt ba đù nào đó...
+      </p>
+
+      <div class="keys">
+        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>di chuyển</span></div>
+        <div><kbd>F</kbd><span>bật / tắt đèn pin</span></div>
+        <div><kbd>E</kbd><span>tương tác</span></div>
+        <div><kbd>Alt</kbd><span>khoá / nhả chuột</span></div>
+      </div>
+
+      <div class="load" id="load-wrap">
+        <div class="bar"><i id="load-fill"></i></div>
+        <p id="load-label">Đang tải khu B… 0%</p>
+      </div>
+
+      <button id="enter-btn" disabled>ĐANG TẢI…</button>
+      <p class="foot" id="overlay-foot">Khuyến nghị dùng tai nghe nha mấy fen</p>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
