@@ -13,7 +13,7 @@ from pathlib import Path
 
 import bpy
 import numpy as np
-from mathutils import Vector
+from mathutils import Quaternion, Vector
 
 ROOT = Path(__file__).resolve().parents[1]
 rng = random.Random(781)
@@ -29,16 +29,19 @@ def collection(name, parent=scene.collection):
     return group
 
 
-courtyard = collection('Khu B | Mở rộng')
+courtyard = collection('Cụm B–C–D | Đối chiếu sơ đồ và video')
 site = collection('01 | Sân vườn và lối đi', courtyard)
-low_wing = collection('02 | Nhà hai tầng', courtyard)
-faculty = collection('03 | Khoa Công nghệ Hóa học và Thực phẩm', courtyard)
-tower = collection('04 | Giảng đường gạch đỏ', courtyard)
+low_wing = collection('02 | Khối C song song khối B', courtyard)
+faculty = collection('03 | Khoa Hóa học và Khoa học sự sống', courtyard)
+tower = collection('04 | Khối B chữ H', courtyard)
+neighbors = collection('12 | Khối D, thư viện và hai dãy A', courtyard)
 furniture = collection('05 | Bàn ghế và bồn cây', courtyard)
 parking = collection('06 | Bãi xe', courtyard)
 utilities = collection('07 | Điện và chiếu sáng', courtyard)
 trees = collection('08 | Cây và thảm thực vật', courtyard)
-physics = collection('09 | Va chạm và bậc thềm', courtyard)
+physics = collection('09 | Va chạm, cao độ và điểm vào', courtyard)
+labs = collection('10 | Các phòng nhìn thấy từ hành lang', courtyard)
+outer = collection('11 | Đường ngoài, bãi ô tô và nhà ghép', courtyard)
 
 
 def periodic_noise(grid_x, grid_y, size):
@@ -105,14 +108,30 @@ def texture(name, base, style, size=512):
         seam = np.clip((edge - .463) / .031, 0, 1)
         value += -.20 * seam - .12 * groove - .075 * inner + .024 * np.exp(-(((rr - .033) / .018) ** 2))
         value += periodic_noise(4, 4, size) * .07
+    elif style == 'ceramic':
+        u,v=(x*5)%1,(y*5)%1
+        seam=np.clip((np.maximum(abs(u-.5),abs(v-.5))-.487)/.013,0,1)
+        value=value*.44-seam*.055
     elif style == 'plaster':
         runoff = periodic_noise(64, 3, size)
-        value += runoff * (.25 * (coarse + .5)) - np.maximum(coarse, 0) * .15
+        value = value * .56 + runoff * (.16 * (coarse + .5)) - np.maximum(coarse, 0) * .1
     elif style == 'bark':
         value = periodic_noise(36, 4, size) * .25 + periodic_noise(99, 7, size) * .19 + medium * .09 + grain * .09
         value += np.maximum(coarse - .1, 0) * .35 + periodic_noise(24, 72, size)*.13
     elif style == 'stone':
         value += -np.maximum(medium + grain * .36 - .25, 0) * .48
+    elif style == 'hedge':
+        u = x * 23 + (np.floor(y * 30) % 2) * .5
+        v = y * 30
+        turns = noise_rng.uniform(-math.pi, math.pi, (30, 23))
+        tones = noise_rng.uniform(-.06, .07, (30, 23))
+        angle = turns[v.astype(int), u.astype(int) % 23]
+        du, dv = u % 1 - .5, v % 1 - .5
+        ax = du * np.cos(angle) + dv * np.sin(angle)
+        ay = -du * np.sin(angle) + dv * np.cos(angle)
+        leaf = np.clip((1 - (ax / .48) ** 2 - (ay / .26) ** 2) * 4, 0, 1)
+        value = (value * .56 - .071 + leaf * (.23 + np.clip(ax * .21, -.05, .05))
+                 + tones[v.astype(int), u.astype(int) % 23])
     elif style in ('lawn', 'soil', 'gravel'):
         value = coarse * .23 + medium * .19 + grain * .12
         value += np.sin((y + medium * .045) * 820) * .036
@@ -150,8 +169,8 @@ def tiled(name, base, style, scale):
 
 brick = tiled('Gạch đất nung xây so le', (.53, .285, .173), 'brick', 1.77)
 cladding = tiled('Gạch thẻ đỏ đầu hồi', (.60, .314, .227), 'tile', 1.47)
-cream = tiled('Sơn kem có vệt mưa', (.77, .716, .58), 'plaster', 3.2)
-plaster = tiled('Bê tông hành lang', (.59, .568, .49), 'plaster', 2.55)
+cream = tiled('Sơn kem có vệt mưa', (.86, .838, .763), 'plaster', 3.2)
+plaster = tiled('Bê tông hành lang', (.688, .68, .637), 'plaster', 2.55)
 terrazzo = tiled('Đá rửa và bậc tam cấp', (.57, .527, .473), 'stone', 1.1)
 paving = tiled('Gạch vỉa hè hoa văn', (.64, .606, .531), 'paving', 1.6)
 lawn = tiled('Cỏ sân vườn', (.273, .343, .155), 'lawn', 3.6)
@@ -232,6 +251,8 @@ class Geometry:
         self.add(vertices, BOX_FACES, mat)
 
     def tube(self, points, radii, mat, sides=8, *, irregular=0):
+        if isinstance(radii, (int, float)):
+            radii = (radii,) * len(points)
         vertices = []
         faces = []
         distance = [0]
@@ -346,7 +367,7 @@ def collider(x0, x1, y0, y1):
     ob['walkCollider'] = True
 
 
-def floor(x0, x1, y0, y1, low, high):
+def floor(x0, x1, y0, y1, low, high, *, axis="x"):
     ob = bpy.data.objects.new('Cao độ lối đi', None)
     physics.objects.link(ob)
     ob.empty_display_type = 'CUBE'
@@ -354,29 +375,13 @@ def floor(x0, x1, y0, y1, low, high):
     ob.scale = ((x1-x0)/2, (y1-y0)/2, .025)
     ob['floorStart'] = low
     ob['floorEnd'] = high
+    ob['floorAxis'] = axis
 
 
-ground = Geometry('Nền cỏ liên tục', site)
-ground.box((0, 0, -.14), (49.95, 50, .26), lawn)
-ground.finish(noShadow=True)
-paths = Geometry('Gạch vỉa hè và bo mép', site)
-for x, width in [(-9.35, 2.55), (5.18, 2.60)]:
-    paths.box((x, 0, .008), (width, 50, .055), paving)
-    for offset in (-width/2, width/2):
-        paths.box((x+offset, 0, .006), (.09, 50, .07), terrazzo)
-for y, width, x0, x1 in [(-17.1, 2.3, -8.08, 3.88), (-.95, 1.45, -8.08, 3.88),
-                          (13.0, 2.75, -8.08, 3.88), (10.35, 1.8, 6.48, 14.3),
-                          (3.8, 2.7, -22.5, -10.625), (17.9, 2.05, 6.48, 12.0)]:
-    paths.box(((x0+x1)/2, y, .008), (x1-x0, width, .055), paving)
-    for offset in (-width/2, width/2):
-        paths.box(((x0+x1)/2, y+offset, .006), (x1-x0, .085, .07), terrazzo)
-paths.finish(noShadow=True)
-dirt = Geometry('Đất trống sát chân tường', site)
-dirt.box((-11.32, -5.1, -.013), (1.25, 28, .025), soil)
-dirt.box((10.6, -9.1, -.015), (8.15, 18.9, .035), gravel)
-dirt.box((11.7, 10.6, -.064), (12.0, 27.7, .1), soil)
-dirt.finish(noShadow=True)
 
+
+font_path = Path('/System/Library/Fonts/Supplemental/Arial Bold.ttf')
+sign_font = bpy.data.fonts.load(str(font_path)) if font_path.is_file() else None
 
 def wing(group, name, x, y, length, depth, floors, side, *, chemistry=False):
     at = coordinates(x, y, side)
@@ -463,125 +468,6 @@ def wing(group, name, x, y, length, depth, floors, side, *, chemistry=False):
         mesh.finish()
 
 
-wing(low_wing, 'Nhà hai tầng', -11.81, -7.95, 23.0, 7.15, 2, 1)
-wing(faculty, 'Khoa Hóa - Thực phẩm', -12.25, 13.4, 16.7, 7.4, 3, 1, chemistry=True)
-wing(tower, 'Hành lang giảng đường', 13.65, 9.55, 26.0, 7.8, 5, -1, chemistry=True)
-
-
-def end_wall(x, y, w, d, h):
-    body = Geometry('Tháp đầu hồi ốp gạch thẻ', tower)
-    trim = Geometry('Chỉ bê tông và cửa ô vuông đầu hồi', tower)
-    body.box((x, y, h/2), (w, d, h), cladding)
-    body.box((x, y, .20), (w+.1, d+.1, .37), brick)
-    body.box((x, y, h), (w+.33, d+.36, .24), cream)
-    west = coordinates(x-w/2, y, -1)
-    front = lambda u, v, z: (x+u, y-d/2-v, z)
-    front.end_wall = True
-    for j in range(5):
-        z = 1.58+j*3.07
-        for at in (west, front):
-            window(trim, at, -.91, .039, z, 1.64, 1.27, bars=3)
-            window(trim, at, 1.11, .039, z+.18, .57, .84, bars=1)
-        if j:
-            body.box((x, y, 3.07*j+.34), (w+.052, d+.052, .072), terrazzo)
-    for z in (.4, 1.1, 4.3, 7.4, 10.5, 13.6):
-        trim.bar((x-w/2-.10, y-d/2+.36, z), (x-w/2-.10, y-d/2+.36, z+.15), .058, roof)
-    trim.bar((x-w/2-.10, y-d/2+.36,.32), (x-w/2-.10, y-d/2+.36,h-.1), .042, roof)
-    body.finish()
-    trim.finish()
-    collider(x-w/2, x+w/2, y-d/2, y+d/2)
-
-
-end_wall(15.50, 8.6, 6.32, 5.4, 15.9)
-
-bridge = Geometry('Cầu nối qua lối đi phía Tây', faculty)
-bridge.box((-16.3, 3.89, 3.17), (2.35, 5.0, .38), cream)
-for x in (-17.33, -15.27):
-    for y in (2.83, 4.98):
-        bridge.box((x, y, 1.49), (.28, .30, 2.98), cream)
-        collider(x-.14, x+.14, y-.15, y+.15)
-    railing(bridge, (x, 1.4, 3.36), (x, 6.39, 3.36), .92)
-bridge.finish()
-
-stairs = Geometry('Cầu thang ngoài trời và chiếu nghỉ', low_wing)
-stair_rail = Geometry('Tay vịn cầu thang ngoài trời', low_wing)
-stair_x = -13.25
-start_y = -24.36
-for i in range(18):
-    y = start_y+(i+.5)*.258
-    top = (i+1)*.183
-    thickness = min(top,.30)
-    stairs.box((stair_x,y,top-thickness/2),(1.50,.259,thickness),terrazzo)
-    stairs.box((stair_x,y-.117,top-.017),(1.54,.040,.041),cream)
-for x in (stair_x-.77,stair_x+.77):
-    railing(stair_rail,(x,start_y,.035),(x,-19.71,3.294),.93)
-stairs.box((stair_x,-19.72,3.17),(1.56,.80,.25),cream)
-stairs.box((stair_x,-21.33,.96),(.31,.45,1.92),cream)
-railing(stair_rail,(stair_x-.78,start_y,.04),(stair_x+.78,start_y,.04),.96)
-collider(stair_x-.78,stair_x+.78,start_y,-19.70)
-stairs.finish()
-stair_rail.finish()
-
-
-def entrance_steps(name, x, y, side, ground_z, group):
-    mesh = Geometry(name, group)
-    for i in range(4):
-        top = ground_z*(i+1)/4
-        mesh.box((x + side*(3.5-i)*.25, y, top/2), (.25, 2.52, top), terrazzo)
-        mesh.box((x + side*(3.65-i)*.25, y, top-.012), (.051, 2.55, .027), cream)
-    for dy in (-1.29, 1.29):
-        # Low sloped cheek walls frame the exterior steps.
-        xa, xb = x+side*.015, x+side*1.008
-        v = [(xa,y+dy-.09,0),(xb,y+dy-.09,0),(xb,y+dy+.09,0),(xa,y+dy+.09,0),
-             (xa,y+dy-.09,ground_z+.55),(xb,y+dy-.09,.52),
-             (xb,y+dy+.09,.52),(xa,y+dy+.09,ground_z+.55)]
-        faces = BOX_FACES if side > 0 else [tuple(reversed(face)) for face in BOX_FACES]
-        mesh.add(v, faces, cream)
-        collider(min(xa, xb), max(xa, xb), y+dy-.09, y+dy+.09)
-    x0, x1 = sorted((x, x+side*1.0))
-    floor(x0, x1, y-1.21, y+1.21, ground_z if side>0 else 0, 0 if side>0 else ground_z)
-    mesh.finish()
-
-
-entrance_steps('Tam cấp trước bảng tên khoa', -10.85, 7.1, 1, .56, faculty)
-floor(-12.25, -10.85, 5.05, 21.75, .56, .56)
-entrance_steps('Tam cấp cạnh giảng đường', 12.25, 17.9, -1, .56, tower)
-floor(12.25, 13.65, -3.45, 22.55, .56, .56)
-# Low retaining walls make it clear where to enter the raised corridors.
-retaining = Geometry('Tường thấp mép hành lang khoa', faculty)
-for x, y0, y1 in [(-10.85,5.05,5.81),(-10.85,8.39,21.75),
-                  (12.25,-3.45,16.61),(12.25,19.19,22.55)]:
-    retaining.box((x,(y0+y1)/2,.47),(.16,y1-y0,.94),cream)
-    retaining.box((x,(y0+y1)/2,.96),(.22,y1-y0,.055),terrazzo)
-    collider(x-.085,x+.085,y0,y1)
-for x0, x1, y in [(-12.25,-10.85,5.05),(-12.25,-10.85,21.75),
-                  (12.25,13.65,-3.45),(12.25,13.65,22.55)]:
-    retaining.box(((x0+x1)/2,y,.47),(x1-x0,.16,.94),cream)
-    collider(x0,x1,y-.08,y+.08)
-retaining.finish()
-
-signs = Geometry('Bảng tên và sơ đồ ngoài hành lang', faculty)
-signs.box((-10.91, 7.65, 3.17), (.34, 4.48, .92), cream)
-signs.box((-10.68, 7.65, 3.15), (.085, 4.15, .82), blue)
-for y in (5.7, 9.6):
-    signs.box((-10.63,y,3.15),(.016,.028,.78),frame)
-signs.box((-8.09, 8.61, 1.42), (.055,.83,1.68), rail)
-signs.box((-8.053,8.61,1.42),(.023,.775,1.61),paper)
-for y in (8.25,8.97):
-    signs.bar((-8.10,y,0),(-8.10,y,1.53),.025,rail)
-for row in range(15):
-    signs.box((-8.036,8.74,1.87-row*.069),(.009,.28-rng.random()*.09,.011),blue)
-for col in range(4):
-    signs.box((-8.034,8.25+col*.064,1.25),(.012,.022,.71),frame)
-for row in range(5):
-    signs.box((-8.032,8.34,1.0+row*.133),(.011,.23,.016),frame)
-signs.finish()
-collider(-8.16,-7.98,8.24,8.98)
-
-font_path = Path('/System/Library/Fonts/Supplemental/Arial Bold.ttf')
-sign_font = bpy.data.fonts.load(str(font_path)) if font_path.is_file() else None
-
-
 def lettering(name, words, group, position, size, angle, material_, *, tilt=math.pi/2):
     curve = bpy.data.curves.new(name, 'FONT')
     curve.body = words
@@ -605,15 +491,6 @@ def lettering(name, words, group, position, size, angle, material_, *, tilt=math
     return mesh
 
 
-for line, z, size in [
-    ('TRƯỜNG ĐẠI HỌC SƯ PHẠM KỸ THUẬT TP. HCM',3.41,.116),
-    ('KHOA CÔNG NGHỆ HÓA HỌC & THỰC PHẨM',3.16,.193),
-    ('FACULTY OF CHEMICAL AND FOOD TECHNOLOGY',2.91,.108),
-]:
-    lettering('Chữ bảng tên khoa', line, faculty, (-10.63,7.65,z), size, math.pi/2, paper)
-lettering('Chữ đầu trang sơ đồ', 'SƠ ĐỒ KHU B', faculty, (-8.029,8.61,2.04), .079, math.pi/2, blue)
-
-
 def bench(name, x, y, angle, *, brown=False):
     mesh = Geometry(name, furniture)
     m = wood if brown else terrazzo
@@ -632,14 +509,6 @@ def bench(name, x, y, angle, *, brown=False):
     collider(x-extent_x,x+extent_x,y-extent_y,y+extent_y)
 
 
-for index,(x,y,angle) in enumerate([(-7.08,-14.25,1.57),(-5.07,-10.20,.13),
-                                     (3.05,-14.32,-1.57),(3.13,-2.35,-1.57),
-                                     (-6.5,6.55,-.16),(3.33,4.11,-1.57),
-                                     (-3.22,11.0,.15), (8.90,14.15,.21),
-                                     (-4.25,15.83,1.61), (3.89,19.64,.1)]):
-    bench(f'Ghế sân vườn {index+1:02}',x,y,angle,brown=index in (1,4,7))
-
-
 def seating(x,y,brown):
     mesh = Geometry('Bộ bàn ghế đá', furniture)
     m = wood if brown else terrazzo
@@ -653,111 +522,6 @@ def seating(x,y,brown):
     bench('Ghế cạnh bàn',x,y+1.01,math.pi,brown=brown)
     collider(x-.69,x+.69,y-.44,y+.44)
 
-
-for x,y,brown in [(-4.7,-13.7,True),(-4.9,-3.65,False),(2.51,2.35,True),(-4.58,8.55,True),
-                   (2.52,-6.85,False),(9.0,11.55,False)]:
-    seating(x,y,brown)
-
-bins = Geometry('Thùng rác đôi đỏ xanh có mái', furniture)
-for x,y in [(-7.65,-12.24),(3.46,-9.95),(7.68,9.0),(-7.5,7.65)]:
-    bins.bar((x,y,0),(x,y,1.05),.054,rail)
-    for dx,m in ((-.215,red),(.215,green)):
-        bins.tube(((x+dx,y,.14),(x+dx,y,.79)),(.146,.186),m,13)
-        bins.tube(((x+dx,y,.797),(x+dx,y,.842)),(.193,.193),roof,13)
-        bins.tube(((x+dx,y,.844),(x+dx,y,.849)),(.135,.135),charcoal,13)
-        bins.box((x+dx,y,1.045),(.43,.46,.068),m,pitch=.11)
-    collider(x-.39,x+.39,y-.21,y+.21)
-bins.finish()
-
-shrine_court = Geometry('Nền và hàng rào thấp quanh miếu', furniture)
-shrine_court.box((0,14.04,.005),(3.65,3.17,.053),terrazzo)
-for x in (-1.83,1.83):
-    shrine_court.box((x,14.11,.06),(.13,3.28,.12),cream)
-    railing(shrine_court,(x,12.57,.08),(x,15.73,.08),.53)
-    collider(x-.077,x+.077,12.57,15.73)
-for x0,x1 in [(-1.83,-.96),(.96,1.83)]:
-    railing(shrine_court,(x0,15.73,.08),(x1,15.73,.08),.53)
-shrine_court.finish()
-
-perimeter = Geometry('Tường rào cuối sân và hàng song', site)
-for y in (-24.83,24.83):
-    perimeter.box((0,y,.48),(43.3,.28,.97),plaster)
-    perimeter.box((0,y,.99),(43.3,.34,.12),terrazzo)
-    for x in range(-21,22,3):
-        perimeter.box((x,y,1.02),(.29,.39,2.03),cream)
-    for i in range(160):
-        x = (i-79.5)*.267
-        perimeter.box((x,y,1.38),(.045,.048,.83),rail)
-    for z in (1.08,1.73):
-        perimeter.box((0,y,z),(43.2,.09,.06),rail)
-# Campus wings beyond the rear fence close the sightlines from inside the garden.
-for x, y, w, d in [(-14.2,28.6,13.0,6.6),(13.0,29.2,14.6,7.2)]:
-    perimeter.box((x,y,3.1),(w,d,6.2),cream)
-    front_y = y-d/2
-    at = lambda u,v,z: (x+u,front_y-v,z)
-    at.end_wall = True
-    for level in range(2):
-        z = 1.48+level*2.94
-        for i in range(5):
-            u = ((i+1)/6-.5)*w
-            window(perimeter,at,u,.035,z,1.31,1.31,bars=3)
-        perimeter.box((x,front_y-.12,z-1.14),(w+.1,.26,.25),plaster)
-    perimeter.box((x,y,6.25),(w+.38,d+.45,.30),roof)
-perimeter.box((0,27.9,-.09),(48,6.5,.15),lawn)
-perimeter.finish()
-
-pole = Geometry('Cột điện, hộp cầu dao và dây võng', utilities)
-for x,y,h in [(8.3,-13.6,7.6),(-7.15,4.25,7.0),(8.60,10.2,7.8)]:
-    pole.tube(((x,y,0),(x,y,h)),(.19,.115),plaster,10)
-    pole.box((x,y,.082),(.47,.46,.16),terrazzo)
-    pole.box((x,y,h-.28),(1.29,.125,.14),roof)
-    for dx in (-.51,.51):
-        pole.bar((x,y,h-.76),(x+dx,y,h-.27),.036,rail)
-        for off in (0,.057,.114):
-            pole.bar((x+dx,y,h-.22+off),(x+dx,y,h-.192+off),.065,terrazzo,10)
-    for dx in (-.265,.265):
-        pole.box((x+dx,y-.096,1.56),(.28,.34,.54),cream)
-        pole.box((x+dx,y-.273,1.56),(.243,.023,.49),plaster)
-        pole.box((x+dx+.08,y-.289,1.56),(.037,.017,.080),charcoal)
-        for v in (1.67,1.71,1.75):
-            pole.box((x+dx,y-.291,v),(.102,.016,.011),roof)
-        pole.tube(((x+dx,y-.13,1.29),(x+dx,y-.13,1.08),(x+dx*.54,y-.13,.91),
-                   (x+dx*.39,y-.13,.85),(x+dx*.39,y-.13,.02)),(.026,)*5,red,7)
-    collider(x-.4,x+.4,y-.3,y+.23)
-
-for a,b in [((8.3,-13.6,7.52),(-7.15,4.25,6.92)),((-7.15,4.25,6.92),(8.6,10.2,7.72)),
-            ((8.6,10.2,7.72),(12.19,20.9,6.55)),((8.3,-13.6,7.52),(17.9,-22.1,6.85))]:
-    for index,off in enumerate((-.46,-.21,.21,.46)):
-        points = []
-        for step in range(17):
-            t = step/16
-            points.append((a[0]*(1-t)+b[0]*t+off,a[1]*(1-t)+b[1]*t,
-                           a[2]*(1-t)+b[2]*t-4*t*(1-t)*(.72+index*.18)))
-        pole.tube(points,(.017,)*len(points),charcoal,6)
-pole.finish()
-
-lamps = Geometry('Đèn sân thân thép và chụp đèn', utilities)
-for x,y,reach in [(-7.86,-16.55,1),(-7.73,-3.9,1),(6.90,-7.55,-1),
-                  (-7.7,10.75,1),(7.02,15.4,-1),(3.54,20.45,1),(8.80,2.45,-1)]:
-    height = 3.78
-    hx = x+reach*.53
-    lamps.bar((x,y,0),(x,y,height-.25),.043,roof,10)
-    lamps.bar((x,y,0),(x,y,.24),.079,rail,10)
-    lamps.tube(((x,y,height-.28),(x+reach*.13,y,height-.06),(hx,y,height)),
-               (.043,.035,.028),roof,9)
-    lamps.box((hx,y,height-.053),(.31,.16,.10),roof)
-    lamps.box((hx,y,height-.108),(.24,.12,.025),lamp_glass)
-    light = bpy.data.objects.new('Nguồn sáng đèn sân', None)
-    utilities.objects.link(light)
-    light.location = (hx,y,height-.24)
-    light['courtyardLight'] = 'path'
-    collider(x-.072,x+.072,y-.072,y+.072)
-lamps.finish()
-for x,y in [(-10.50,-13),(-10.50,-3),(-11.19,7.10),(-11.19,14.5),(12.52,15.5),(12.52,21.0)]:
-    light = bpy.data.objects.new('Nguồn sáng hành lang', None)
-    utilities.objects.link(light)
-    light.location = (x,y,2.80)
-    light['courtyardLight'] = 'corridor'
 
 def torus(mesh, p, radius, thickness, mat):
     x,y,z = p
@@ -830,28 +594,6 @@ def scooter(mesh,x,y,angle,paint,variant):
         mesh.vertices[i]=(x+a*co-b*si,y+a*si+b*co,c+.008)
 
 
-for row,x in enumerate((9.85,12.05,14.15)):
-    fleet = Geometry(f'Hàng xe máy {row+1}',parking)
-    for i in range(15):
-        y = -17.8+i*.99+rng.uniform(-.084,.084)
-        scooter(fleet,x+rng.uniform(-.15,.15),y,(-.25 if row%2 else 2.9)+rng.uniform(-.13,.13),
-                rng.choice((bike_blue,bike_red,bike_gray,bike_dark,bike_dark)),i)
-    fleet.finish()
-    collider(x-1.0,x+1.0,-18.23,-3.52)
-
-barrier = Geometry('Hàng chắn xe sơn vàng đỏ', parking)
-x = 8.06
-for y in (-18.65,-15.55,-12.45,-9.35,-6.25,-3.15):
-    barrier.bar((x,y,.01),(x,y,.70),.025,red)
-    barrier.box((x,y,.035),(.23,.23,.052),terrazzo)
-barrier.bar((x,-18.65,.70),(x,-3.15,.70),.021,rail)
-for i in range(34):
-    y = -18.65+i*15.5/34
-    barrier.bar((x,y,.34),(x,y+15.5/34,.34),.019,yellow if i%2 else red)
-barrier.finish()
-collider(x-.07,x+.07,-18.65,-3.15)
-
-
 def broad_tree(name,x,y,h,crown,radius,gray):
     timber = Geometry(name + ' | thân và cành', trees)
     leaves = Geometry(name + ' | tán lá', trees)
@@ -906,108 +648,1360 @@ def broad_tree(name,x,y,h,crown,radius,gray):
     collider(x-radius*.87,x+radius*.87,y-radius*.87,y+radius*.87)
 
 
-for i,(x,y,h,crown,radius,gray) in enumerate([
-    (-6.86,-17.92,10.74,4.37,.55,False),(-10.69,-11.9,7.35,3.43,.31,False),
-    (-10.74,-4.80,7.6,3.22,.31,False),(-8.19,2.98,8.4,3.46,.37,False),
-    (-6.90,12.38,12.7,3.82,.41,True),(3.42,-11.35,12.5,3.46,.49,False),
-    (7.42,-15.88,13.9,3.93,.50,False),(7.53,5.61,13.1,3.24,.40,True),
-    (3.37,11.32,13.05,3.06,.34,True),(8.95,-.83,8.9,3.15,.30,False),
-    (-5.68,18.55,12.02,3.61,.34,True),(7.35,19.90,9.3,3.58,.35,False)
+# Blender X/Y are the horizontal site axes. The inner and outer walks are
+# estimated from adjoining corners, door bays and pacing in both clips.
+WEST, INNER, EAST, EAST_OUT = -23.2, -13.0, 3.25, 13.60
+C_WEST, C_EAST = -45.4, -34.0
+SOUTH, NORTH = -22.3, 32.7
+CROSS_SOUTH,CROSS_NORTH = -.85, 10.95
+CROSS_HALL_Y = 4.52
+BRIDGE_Y = -21.36
+GROUND = .735
+STOREY = 3.08
+GALLERY = 2.38
+SHRINE = (-34.4, -34.65)
+JUNCTION = (-10.02, -28.13)
+TRANSFORMER = (-11.26, -25.26)
+
+# The older survey used a wider, longer court. Keep the observed order of
+# props and trees when fitting that survey to the southern bay of the H.
+def court_position(x,y):
+    return (-10.6 + (x+10.6)*.403, SOUTH + (y+24.0)*.341)
+
+corridor_tiles = tiled('Gạch men mờ ô vuông hành lang', (.724,.731,.691), 'ceramic', 2.1)
+walkway = tiled('Bê tông lối sân có mạch tấm', (.47,.493,.479), 'stone', 1.7)
+asphalt = tiled('Nhựa đường nội bộ', (.287,.303,.308), 'gravel', 3.45)
+skirting = material('Chân tường chống ẩm xanh đen', (.035,.064,.053))
+artificial_turf = tiled('Dải cỏ nhân tạo sát chân tường', (.293,.397,.209), 'lawn', 2.4)
+metal_gray = material('Khung sắt sơn xám xanh', (.35,.386,.365), roughness=.56, metal=.20)
+backing = material('Hốc tối và cao su', (.028,.035,.033))
+frosted = material('Kính mờ và ánh phòng lab', (.275,.335,.325), roughness=.38)
+glass_clear = material('Kính trong hành lang', (.33,.447,.421), roughness=.26, two_sided=True)
+glass_clear.node_tree.nodes.get('Principled BSDF').inputs['Alpha'].default_value = .22
+glass_clear.surface_render_method = 'BLENDED'
+glass_clear.diffuse_color = (.33,.447,.421,.22)
+lab_wall = material('Tường trong phòng màu ngà', (.79,.80,.746), roughness=.77)
+lab_tile = material('Gạch men trắng phòng thực hành', (.756,.787,.735), roughness=.41)
+lab_counter = material('Mặt bàn màu sáng', (.50,.515,.469), roughness=.51)
+stool_blue = material('Ghế nhựa xanh hành lang', (.075,.125,.455), roughness=.62)
+plate_blue = material('Biển phòng xanh cobalt', (.027,.081,.346), roughness=.59)
+plate_yellow = material('Vạch định vị màu vàng', (.76,.63,.079))
+conduit = material('Ống PVC đã ngả kem', (.555,.537,.411))
+shed_lime = material('Tôn xanh chanh nhà ghép', (.37,.555,.115), roughness=.54)
+shed_blue = material('Tôn xanh dương nhà ghép', (.041,.170,.385), roughness=.54)
+shed_teal = material('Tôn xanh xám tầng dưới', (.111,.251,.224), roughness=.57)
+pot_clay = material('Chậu sành đỏ nâu', (.23,.105,.078), roughness=.72)
+dark_gold = material('Khung bảng báo màu đồng', (.39,.249,.083), roughness=.44, metal=.33)
+green_hedge = [
+    material('Lá hàng rào '+str(i),c,two_sided=True) for i,c in enumerate([
+        (.046,.103,.034),(.077,.156,.047),(.114,.203,.067),(.148,.245,.079),
+        (.184,.274,.087),(.223,.323,.113)
+    ])
+]
+vehicle_paint = [material('Sơn ô tô '+str(i), color, roughness=.39, metal=.3) for i,color in enumerate([
+    (.065,.069,.073),(.60,.635,.629),(.36,.393,.39),(.305,.027,.022),(.095,.151,.246)
+])]
+road_trim = material('Sơn vạch mòn', (.67,.638,.523))
+
+
+class Facade:
+    def __init__(self, x,y,nx,ny,length):
+        self.origin = (x,y)
+        self.normal = (nx,ny)
+        self.tangent = (-ny,nx)
+        self.length = length
+        self.angle = math.atan2(nx,-ny)
+
+    def point(self,u,v,z):
+        x,y=self.origin
+        a,b=self.tangent
+        nx,ny=self.normal
+        return (x+a*u+nx*v, y+b*u+ny*v, z)
+
+    def u_at(self,x,y):
+        return (x-self.origin[0])*self.tangent[0] + (y-self.origin[1])*self.tangent[1]
+
+    def box(self,mesh,u,v,z,du,dv,dz,mat):
+        mesh.box(self.point(u,v,z),(du,dv,dz),mat,angle=self.angle)
+
+    def line(self,mesh,a,b,r,mat,sides=6):
+        mesh.bar(self.point(*a),self.point(*b),r,mat,sides)
+
+    def blocker(self,u0,u1,v0,v1):
+        a,b=self.point(u0,v0,0),self.point(u1,v1,0)
+        collider(min(a[0],b[0]),max(a[0],b[0]),min(a[1],b[1]),max(a[1],b[1]))
+
+    def level(self,u0,u1,v0,v1,start,end=None):
+        a,b=self.point(u0,v0,0),self.point(u1,v1,0)
+        # The stair descends towards positive V. The game samples Blender's
+        # positive X or Y after the GLB exporter converts Y to negative Z.
+        end=start if end is None else end
+        nx,ny=self.normal
+        if nx<0 or ny<0:
+            start,end=end,start
+        floor(min(a[0],b[0]),max(a[0],b[0]),min(a[1],b[1]),max(a[1],b[1]),
+              start,end,axis='x' if nx else 'depth')
+
+    def text(self, group, words, u,v,z, height, mat=paper):
+        return lettering(words,words,group,self.point(u,v,z),height,self.angle,mat)
+
+
+def translucent_panel(mesh, facade, u0,u1,v,z0,z1,mat):
+    vertices=[facade.point(u0,v,z0),facade.point(u1,v,z0),
+              facade.point(u1,v,z1),facade.point(u0,v,z1)]
+    mesh.add(vertices,[(0,1,2,3)],mat)
+
+
+def slab(mesh,x0,x1,y0,y1,z,mat,depth=.08):
+    mesh.box(((x0+x1)/2,(y0+y1)/2,z-depth/2),(x1-x0,y1-y0,depth),mat)
+
+
+def path(mesh,x0,x1,y0,y1,mat, *, top=.055, joints=True):
+    slab(mesh,x0,x1,y0,y1,top,mat)
+    if not joints:
+        return
+    vertical = y1-y0 >= x1-x0
+    length=y1-y0 if vertical else x1-x0
+    first=y0 if vertical else x0
+    for i in range(1,int(length/2.22)+1):
+        mid=first+i*2.22
+        if vertical:
+            mesh.box(((x0+x1)/2,mid,top+.0005),(x1-x0,.014,.002),skirting)
+        else:
+            mesh.box((mid,(y0+y1)/2,top+.0005),(.014,y1-y0,.002),skirting)
+
+
+terrain=Geometry('Sân cỏ và cao độ nền',site)
+slab(terrain,-62,29,-88,52,-.018,lawn,depth=.24)
+terrain.finish(noShadow=True)
+roads=Geometry('Đường bao Khối C và Khối B',outer)
+for x0,x1,y0,y1 in [(-56.0,-49.3,-80.8,39.4),(-56.0,21.3,39.4,46.4),
+                     (17.8,24.8,-28.3,39.4),(-56,18.5,-85.1,-80.8),
+                     (-33.55,-26.10,7.25,29.50),(-33.55,-26.10,30.75,38.9)]:
+    path(roads,x0,x1,y0,y1,asphalt,top=.009,joints=False)
+for x in (-56.0,-49.3):
+    roads.box((x,-21.0,.057),(.12,120.8,.115),terrazzo)
+for y in (-28,38):
+    for n in range(9):
+        roads.box((-55.5+n*.65,y,.014),(.29,2.1,.007),road_trim)
+for y in range(-75,39,5):
+    roads.box((-52.66,y,.013),(.097,1.9,.006),road_trim)
+for x in range(-52,21,5):
+    roads.box((x,42.9,.013),(1.94,.10,.006),road_trim)
+for y in (8.0,12.85,17.7,22.55,27.4):
+    roads.box((-29.46,y,.017),(5.76,.084,.006),plate_yellow)
+roads.finish(noShadow=True)
+
+paths=Geometry('Lối bê tông hai sân và các ô cỏ vườn miếu',site)
+for index,(x0,x1,y0,y1,mat) in enumerate([
+    (-10.16,-8.55,SOUTH,-3.25,walkway),(-2.21,-.54,SOUTH,-3.25,walkway),
+    (-8.55,-2.21,-4.81,-3.25,walkway),
+    (-11.02,3.18,-28.87,-25.37,paving),
+    (-10.16,-8.55,-25.37,SOUTH,walkway),
+    (-2.21,-.54,-25.37,SOUTH,paving),
+    (-8.55,-2.21,-23.80,-22.29,paving),
+    (-10.21,-8.61,13.35,NORTH,walkway),(-2.21,-.54,13.35,NORTH,walkway),
+    (-8.61,-2.21,13.35,14.94,walkway),(-10.21,-.54,NORTH,NORTH+1.43,walkway),
+    (-48.97,-10.16,-24.10,-22.44,walkway),
+    (-36.9,-11.02,-28.02,-25.45,paving),
+    (-24.99,-22.48,-40.02,-28.02,paving),
+    (-31.05,-28.58,-22.44,7.25,paving),(-27.24,-25.74,-22.35,7.25,paving),
+    (-27.17,-24.51,32.93,39.33,walkway),(-33.55,-25.70,29.50,30.74,walkway),
+    (-25.76,-23.9,-17.96,-15.41,paving),
+    (-23.40,-20.13,-25.45,-24.12,paving),(-15.98,-12.49,-25.45,-24.12,paving),
+    (-47.35,-26.0,-41.8,-40.02,paving),(-43.08,-41.18,-40.02,-24.10,paving),
+    (-30.22,-27.84,-40.02,-24.10,paving),(-41.18,-30.22,-33.06,-31.53,paving),
+    (-37.68,-35.70,-40.02,-34.63,paving),(-34.66,-33.35,-40.02,-36.02,paving),
+    (-27.83,-25.95,-80.15,-41.79,walkway),(-45.66,-25.95,-79.5,-77.77,walkway),
+    (-25.95,-23.26,-42.24,-29.54,paving),(-22.48,-11.02,-29.00,-27.84,paving),
+    (3.18,13.78,-28.90,-27.25,paving),
+    (-10.75,1.77,-77.93,-76.36,walkway),(-10.75,1.77,-67.87,-66.25,walkway),
+    (-10.75,1.77,-57.11,-55.51,walkway)
 ]):
-    broad_tree(f'Cây sân {i+1:02}',x,y,h,crown,radius,gray)
+    path(paths,x0,x1,y0,y1,mat,top=.054+index*.00042)
+for x,y,length in [(-25.76,5.2,55),(-10.45,-12.1,19),(.70,-12.1,19),
+                   (-10.45,22,20),(.70,22,20)]:
+    paths.box((x,y,.007),(.52,length,.032),artificial_turf)
+paths.box(((INNER+EAST)/2,CROSS_SOUTH-GALLERY-.26,.006),(EAST-INNER,.47,.03),artificial_turf)
+# Small rounded landing beside the red mark, joining the paved approach.
+center=(-36.10,-34.17)
+points=[(*center,.053)]+[(center[0]+2.46*math.cos(a),center[1]+1.88*math.sin(a),.053)
+                       for a in (index*math.tau/48 for index in range(48))]
+paths.add(points,[(0,n+1,(n+1)%48+1) for n in range(48)],paving)
+paths.finish(noShadow=True)
 
-plants = Geometry('Lá ráy, cỏ mép gạch và lá khô', trees)
-mulch = Geometry('Bồn đất và nền chân cây',site)
-for x,y,spread in [(-2.52,14.2,1.0),(2.47,14.75,1.0),(-3.03,16.5,.82),
-                   (-7.05,6.72,.75),(-8.0,2.05,.98),(7.49,8.48,.75),
-                   (-11.01,-5.1,.62),(-10.98,-11.7,.63),(7.42,-15.88,.7),
-                   (3.42,-11.35,.76),(-6.86,-17.92,.66),(7.36,19.8,.78)]:
-    # Ragged soil patch with its edge just below the surrounding grass blades.
-    ring = [(x+math.cos(a)*spread*rng.uniform(.8,1.19),y+math.sin(a)*spread*rng.uniform(.63,.98),.0014)
-            for a in (i*math.tau/20 for i in range(20))]
-    mulch.add(ring,[tuple(range(20))],soil)
-    for j in range(24):
-        angle = rng.uniform(0,math.tau)
-        dx,dy = rng.uniform(-spread*.75,spread*.75),rng.uniform(-spread*.70,spread*.70)
-        h = rng.uniform(.11,.55)
-        sign = (math.cos(angle),math.sin(angle),rng.uniform(-.40,-.15))
-        plants.bar((x+dx,y+dy,0),(x+dx+sign[0]*.16,y+dy+sign[1]*.16,h),.010,leaf_mats[1],5)
-        plants.leaf((x+dx+sign[0]*.16,y+dy+sign[1]*.16,h),sign,rng.uniform(.24,.49),
-                    rng.uniform(.14,.28),rng.choice(leaf_mats))
-for x0,x1,y0,y1 in [(-8.0,3.83,-24.5,24.5),(6.55,8.0,-24,24),
-                      (-11.72,-10.69,-19,3.2)]:
-    area = (x1-x0)*(y1-y0)
-    for i in range(int(area*9)):
-        x,y = rng.uniform(x0,x1),rng.uniform(y0,y1)
-        if x < 3.83 and x > -8.01 and (abs(y+17.1)<1.2 or abs(y+.95)<.78 or
-                abs(y-13)<1.44 or (abs(x)<1.9 and abs(y-14.0)<1.7)):
+west_face=Facade(WEST,(SOUTH+NORTH)/2,-1,0,NORTH-SOUTH)
+inner_face=Facade(INNER,(SOUTH+NORTH)/2,1,0,NORTH-SOUTH)
+entry_face=Facade((WEST+INNER)/2,SOUTH,0,-1,INNER-WEST)
+return_face=Facade((WEST+INNER)/2,NORTH,0,1,INNER-WEST)
+bar_south=Facade((INNER+EAST)/2,CROSS_SOUTH,0,-1,EAST-INNER)
+bar_north=Facade((INNER+EAST)/2,CROSS_NORTH,0,1,EAST-INNER)
+east_face=Facade(EAST,(SOUTH+NORTH)/2,-1,0,NORTH-SOUTH)
+c_face=Facade(C_EAST,(SOUTH+NORTH)/2,1,0,NORTH-SOUTH)
+c_back=Facade(C_WEST,(SOUTH+NORTH)/2,-1,0,NORTH-SOUTH)
+
+# Labels are only used where the recording makes the wording legible. Open
+# passages and the room bays are positioned in order along each walk.
+OUTER_ROOMS=[
+    (-14.9,('B109',),True), (-8.05,(),False),
+    (-.15,('XƯỞNG THỰC TẬP CÔNG NGHỆ THỰC PHẨM 3','Food Technology Lab 3'),False),
+    (14.35,(),False),(20.87,(),True),
+    (28.05,('PHÒNG PHÂN TÍCH KỸ THUẬT CAO 1','Advanced Technology Lab 1'),False)
+]
+INNER_ROOMS=[
+    (-17.6,(),True),(-10.65,('KHO HÓA CHẤT','Chemical Warehouse'),False),(-5.1,(),False),
+    (.25,('PHÒNG THÍ NGHIỆM QUÁ TRÌNH VÀ THIẾT BỊ','Unit Operations Lab'),True),
+    (11.9,(),True),(19.0,(),True),
+    (26.6,('PHÒNG PHÂN TÍCH KỸ THUẬT CAO 1','Advanced Technology Lab 1','B106A'),False)
+]
+
+
+def vertical_post(face, mesh, u,v,low,high, width=.25, depth=.27, mat=cream):
+    face.box(mesh,u,v,(low+high)/2,width,depth,high-low,mat)
+
+
+def runs(length, openings):
+    """Continuous runs of a wall between stair or passage openings."""
+    cursor=-length/2
+    for a,b in sorted(openings):
+        if a>cursor:
+            yield cursor,a
+        cursor=max(cursor,b)
+    if cursor<length/2:
+        yield cursor,length/2
+
+
+def handrail(face, mesh, lo,hi,v,z):
+    face.line(mesh,(lo,v,z+.82),(hi,v,z+.82),.019,rail,7)
+    face.line(mesh,(lo,v,z+.10),(hi,v,z+.10),.013,rail,6)
+    count=max(1,round((hi-lo)/.213))
+    for i in range(count+1):
+        u=lo+(hi-lo)*i/count
+        face.line(mesh,(u,v,z),(u,v,z+.82),.013 if i%8 else .022,rail,6)
+
+
+def base_steps(face, u, width, *, depth=GALLERY, length=1.35, mat=terrazzo):
+    mesh=Geometry('Tam cấp · '+str(tuple(round(v,1) for v in face.point(u,depth,0)[:2])),faculty)
+    for i in range(5):
+        tread=length/5
+        v=depth+(4.5-i)*tread
+        top=GROUND*(i+1)/5
+        face.box(mesh,u,v,top/2,width,tread+.002,top,mat)
+        face.box(mesh,u,v+tread*.42,top-.012,width+.018,.038,.032,terrazzo)
+    for s in (-1,1):
+        off=u+s*(width/2+.083)
+        v0,v1=depth-.085,depth+length+.018
+        points=[(off-.083,v0,0),(off+.083,v0,0),(off+.083,v1,0),(off-.083,v1,0),
+                (off-.083,v0,GROUND+.84),(off+.083,v0,GROUND+.84),
+                (off+.083,v1,.66),(off-.083,v1,.66)]
+        mesh.add([face.point(*p) for p in points],[tuple(reversed(p)) for p in BOX_FACES],cream)
+        face.blocker(off-.091,off+.091,v0,v1)
+    face.level(u-width/2,u+width/2,depth,depth+length,GROUND,0)
+    mesh.finish()
+
+
+def grille(face, mesh, panes, u,v,z,w,h, *, open_window=False, frosted_window=False):
+    # Recessed glazing and the square grid continue across the fixed transom.
+    low,high=z-h/2,z+h/2
+    for off in (-w/2,w/2):
+        face.box(mesh,u+off,v,z,.054,.10,h+.058,metal_gray)
+    for height in (low,high):
+        face.box(mesh,u,v,height,w+.056,.106,.052,metal_gray)
+    translucent_panel(panes,face,u-w/2+.025,u+w/2-.025,v-.005,low+.018,high-.02,
+                      frosted if frosted_window else glass_clear)
+    for j in range(1,max(3,int(w/.44))):
+        divisions=max(3,int(w/.44))
+        off=u-w/2+j*w/divisions
+        face.box(mesh,off,v+.032,z,.038,.054,h,metal_gray)
+    for j in range(1,max(3,int(h/.175))):
+        divisions=max(3,int(h/.175))
+        height=low+j*h/divisions
+        face.box(mesh,u,v+.036,height,w,.03,.024,metal_gray)
+    if open_window:
+        hinge=face.point(u+w*.491,v+.08,z)
+        offset=(.23*face.normal[0],.23*face.normal[1],0)
+        mesh.box((hinge[0]+offset[0],hinge[1]+offset[1],hinge[2]),(.43,.035,h-.08),frosted,angle=face.angle-.82)
+
+
+def lab_name_plate(face, mesh, group, u, z, words):
+    if not words:
+        return
+    width=.93 if len(words)==1 else max(1.08,min(1.68,len(words[0])*.031))
+    height=.245 if len(words)==1 else .335
+    face.box(mesh,u,.149,z,width,.048,height,plate_blue)
+    for h in (-height/2+.012,height/2-.012):
+        face.box(mesh,u,.179,z+h,width-.026,.005,.006,paper)
+    if len(words)==1:
+        face.text(group,words[0],u,.183,z,.148)
+        return
+    face.text(group,'KHOA HÓA HỌC VÀ KHOA HỌC SỰ SỐNG',u,.187,z+.106,.037)
+    face.text(group,words[0],u,.187,z+.007,min(.100,width/max(len(words[0]),1)*1.31))
+    face.text(group,words[1],u,.187,z-.104,.059)
+    if len(words)>2:
+        face.box(mesh,u+.59,.185,z-.284,.37,.036,.133,plate_blue)
+        face.text(group,words[2],u+.59,.216,z-.29,.079)
+
+
+def extract_fan(face, mesh, u,z,r=.23):
+    face.box(mesh,u,.052,z,r*2.32,.103,r*2.22,backing)
+    parts=[]
+    for i in range(18):
+        a=i*math.tau/18
+        parts.append((u+(r-.013)*math.cos(a),.121,z+(r-.013)*math.sin(a)))
+    mesh.tube([face.point(*p) for p in parts+[parts[0]]],.016,metal_gray,6)
+    for leaf in range(4):
+        a=leaf*math.pi/2+.45
+        pts=[face.point(u+dr*math.cos(t+a),.134,z+dr*math.sin(t+a))
+             for dr,t in [(.024,0),(r*.80,-.31),(r*.89,.05),(r*.59,.58),(.033,.29)]]
+        mesh.add(pts,[(0,1,2,3,4)],roof)
+    face.line(mesh,(u,.10,z),(u,.163,z),.061,metal_gray,13)
+    for row in range(-2,3):
+        h=row*.074
+        width=math.sqrt(max(0,r*r-h*h))*2
+        face.box(mesh,u,.159,z+h,width,.019,.013,metal_gray)
+
+
+def notice_board(face, mesh, u,v,z,w,h, *, blue_strip=False):
+    face.box(mesh,u,v,z,w+.056,.049,h+.042,dark_gold)
+    face.box(mesh,u,v+.028,z,w,.029,h,paper)
+    if blue_strip:
+        face.box(mesh,u,v+.048,z+h*.346,w*.945,.008,h*.156,plate_blue)
+    for j in range(9):
+        off=rng.uniform(.686,.92)*w
+        face.box(mesh,u-w*.44+off/2,v+.049,z+h*.242-j*h*.076,off,.008,.007,metal_gray)
+
+
+def safety_signs(face, mesh, u, z):
+    face.box(mesh,u,.167,z,.635,.030,.138,paper)
+    for j in range(4):
+        x=u+(j-1.5)*.146
+        pts=[(x+.041*math.cos(a),.188,z+.043*math.sin(a))
+             for a in (i*math.tau/10 for i in range(11))]
+        mesh.tube([face.point(*p) for p in pts],.006,red,4)
+        face.line(mesh,(x-.026,.190,z-.026),(x+.026,.190,z+.026),.006,red,4)
+
+
+def make_door(face, details, glazing, u,w, words,is_open,group):
+    low,top=GROUND,GROUND+2.28
+    head=top+.48
+    face.box(details,u,.005,top+.025,w+.08,.118,.075,metal_gray)
+    for x in (u-w/2,u+w/2):
+        vertical_post(face,details,x,.028,low,head,.078,.14,metal_gray)
+    grille(face,details,glazing,u,.051,(top+head)/2,w-.026,head-top)
+    face.box(details,u,.083,low+.018,w,.156,.037,terrazzo)
+    # Open metal leaves are modelled on their real hinges so the exposed room
+    # remains visible from a moving viewpoint.
+    if is_open:
+        for side in (-1,1):
+            x=u+side*(w*.5-.05)
+            origin=face.point(x,.056,0)
+            angle=face.angle+side*.96
+            door_axis=(math.cos(angle),math.sin(angle))
+            width=w*.5-.085
+            direction=-side
+            x0,y0=origin[:2]
+            center=(x0+door_axis[0]*width*.5*direction,y0+door_axis[1]*width*.5*direction)
+            both=Geometry('Cánh cửa phòng mở',group)
+            for z in (low+.155,top-.035):
+                both.box((*center,z),(width,.074,.285 if z<low+.22 else .071),metal_gray,angle=angle)
+            for s in (-1,1):
+                both.box((center[0]+door_axis[0]*width*.47*s,center[1]+door_axis[1]*width*.47*s,(low+top)/2),
+                         (.058,.083,top-low),metal_gray,angle=angle)
+            for j in range(11):
+                both.box((*center,low+.34+j*.165),(width,.034,.025),metal_gray,angle=angle)
+            for j in (-1,0,1):
+                both.box((center[0]+door_axis[0]*width*.235*j,center[1]+door_axis[1]*width*.235*j,(low+top)/2),
+                         (.024,.039,top-low),metal_gray,angle=angle)
+            both.finish()
+    else:
+        for side in (-1,1):
+            v=u+side*w/4
+            grille(face,details,glazing,v,.069,low+(top-low)/2,w/2-.047,top-low-.12,
+                   frosted_window=True)
+            face.box(details,v,.103,low+.12,w*.5-.044,.037,.233,metal_gray)
+            face.line(details,(u+side*.084,.144,low+.92),(u+side*.084,.144,low+1.112),.015,rail,8)
+    lab_name_plate(face,details,group,u-.145,top+.258,words)
+    if words and len(words)>1:
+        safety_signs(face,details,u+.80,top+.252)
+    if is_open:
+        for j in (-1,1):
+            face.box(details,u+j*w*.36,.114,top+.226,.022,.027,.316,rail)
+    return low,head
+
+
+def low_wall(face,mesh,a,b,v,height):
+    face.box(mesh,(a+b)/2,v,height/2,b-a,.183,height,cream)
+    face.box(mesh,(a+b)/2,v,.085,b-a+.007,.184,.165,skirting)
+    face.box(mesh,(a+b)/2,v,height+.023,b-a+.053,.236,.045,plaster)
+    for i in range(max(1,int((b-a)//5.4))+1):
+        u=a+.31+i*(b-a-.64)/max(1,int((b-a)//5.4))
+        if a+.24<u<b-.23:
+            face.box(mesh,u,v+.109,.354,.21,.16,.196,plaster)
+            face.box(mesh,u,v+.194,.349,.127,.026,.105,backing)
+
+
+def ac_unit(face,mesh,u,v,z):
+    face.box(mesh,u,v,z,.70,.28,.57,cream)
+    face.box(mesh,u-.08,v+.155,z,.41,.026,.39,metal_gray)
+    for j in range(8):
+        face.box(mesh,u-.08,v+.172,z-.169+j*.049,.41,.024,.015,roof)
+    face.box(mesh,u+.227,v+.148,z-.172,.085,.026,.049,blue)
+    for side in (-1,1):
+        face.box(mesh,u+side*.23,v,z-.299,.073,.37,.068,rail)
+
+
+def drainpipe(face,mesh,u,z0,roof_z,v=.188):
+    pts=[(u,v+.18,z0),(u,v,z0+.163),(u,v,roof_z-.71),
+         (u+.19,v,roof_z-.48),(u+.19,v+.19,roof_z-.32)]
+    mesh.tube([face.point(*p) for p in pts],(.053,.053,.053,.048,.045),conduit,8)
+    for offset in (1.2,2.85,5.3):
+        if z0+offset<roof_z-.8:
+            face.line(mesh,(u,v,z0+offset),(u,v,z0+offset+.043),.064,metal_gray,9)
+
+
+def visible_lab(face, u, group):
+    # Only the front part visible from the corridor is represented.
+    inner_width=4.96
+    room_depth=4.15
+    shell=Geometry('Phòng thực hành nhìn từ cửa · tường và nền',group)
+    props=Geometry('Bàn, tủ kính, ghế và chậu phòng thực hành',group)
+    for off in (-inner_width/2,inner_width/2):
+        vertical_post(face,shell,u+off,-room_depth/2,GROUND,GROUND+2.88,.138,room_depth,lab_wall)
+        face.blocker(u+off-.073,u+off+.073,-room_depth,-.017)
+    face.box(shell,u,-room_depth,GROUND+1.44,inner_width,.189,2.88,lab_wall)
+    face.blocker(u-inner_width/2,u+inner_width/2,-room_depth-.09,-room_depth+.09)
+    face.box(shell,u,-room_depth/2,GROUND-.087,inner_width+.12,room_depth,.174,lab_tile)
+    face.box(shell,u,-room_depth/2,GROUND+2.906,inner_width+.1,room_depth,.25,lab_wall)
+    for j in range(10):
+        face.box(shell,u+(j-4.5)*.447,-room_depth/2,GROUND+.003,.007,room_depth,.004,plaster)
+    for j in range(9):
+        face.box(shell,u,-(j+.5)*.442,GROUND+.003,inner_width,.009,.004,plaster)
+    nx,ny=face.normal
+    if nx:
+        a,b=face.point(u-inner_width/2,-room_depth,0),face.point(u+inner_width/2,0,0)
+        floor(min(a[0],b[0]),max(a[0],b[0]),min(a[1],b[1]),max(a[1],b[1]),GROUND,GROUND)
+    for t in (-1.19,1.095):
+        face.box(props,u+t,-2.45,GROUND+.895,1.71,.81,.092,lab_counter)
+        face.box(props,u+t,-2.45,GROUND+.44,1.65,.74,.84,wood)
+        for col in (-.48,.0,.48):
+            face.box(props,u+t+col,-2.035,GROUND+.456,.435,.064,.663,slat)
+            face.box(props,u+t+col,-1.994,GROUND+.678,.134,.028,.029,rail)
+        for k in range(4):
+            face.box(props,u+t-.43+k*.28,-2.50,GROUND+1.11,.156,.19,.321,
+                     rng.choice((cream,metal_gray,roof)))
+        face.blocker(u+t-.87,u+t+.87,-2.87,-2.035)
+    face.box(props,u+.79,-3.51,GROUND+1.15,1.80,.79,2.23,metal_gray)
+    face.box(props,u+.79,-3.104,GROUND+1.25,1.65,.035,1.50,frosted)
+    for i in range(4):
+        face.box(props,u+.79,-3.079,GROUND+.607+i*.382,1.65,.019,.022,rail)
+    for j in range(2):
+        face.box(props,u+(j-.5)*1.70,-1.0,GROUND+2.68,1.14,.083,.055,tube_light)
+    face.box(props,u,-3.54,GROUND+2.42,1.16,.222,.279,cream)
+    face.box(props,u,-3.412,GROUND+2.192,1.03,.028,.042,backing)
+    shell.finish()
+    props.finish()
+
+
+def gallery(face, group, name, *, storeys=3, depth=GALLERY, breaks=(), joins=(), doors=(),
+            cross=None, brick_ground=False, low=False, ends=True, construction=False,
+            junction_offset=0, shutters_after=None):
+    structure=Geometry(name+' · dầm, sàn, mái và tường',group)
+    details=Geometry(name+' · cửa, khung sắt, thiết bị và lan can',group)
+    glazing=Geometry(name+' · kính',group)
+    services=Geometry(name+' · máng cáp, ống nước và đèn',group)
+    n=face.length
+    top=GROUND+storeys*STOREY+junction_offset
+    for fl in range(storeys):
+        z=GROUND+fl*STOREY
+        slab_depth=depth+(.12 if fl else 0)
+        face.box(structure,0,slab_depth*.50-.055,z-.125+junction_offset,n+.014,slab_depth+.15,.248,
+                 corridor_tiles if not fl else plaster)
+        if fl:
+            for i in range(1,round(n/3.72)+1):
+                u=(i*3.72)-n/2
+                if u<n/2:
+                    face.box(structure,u,depth*.5,z-.251,.172,depth,.225,plaster)
+        if fl==0:
+            for a,b in runs(n,[*joins,*[(pos-width/2,pos+width/2) for pos,width in breaks]]):
+                low_wall(face,structure,a,b,depth,GROUND+.86)
+                face.blocker(a,b,depth-.09,depth+.09)
+        elif fl==1 or low:
+            face.box(structure,0,depth+.008,z+.415,n+.04,.243,.83 if not low else .50,cream)
+            if low:
+                handrail(face,details,-n/2,n/2,depth+.055,z+.258)
+            else:
+                face.box(structure,0,depth+.016,z+.825,n+.06,.29,.047,plaster)
+        else:
+            handrail(face,details,-n/2,n/2,depth+.024,z+.031)
+        # Wall backing on the two upper floors is recessed behind the corridor.
+        if fl:
+            face.box(structure,0,-.145,z+STOREY/2,n,.258,STOREY,brick if fl==2 or low else cream)
+            bays=round(n/(3.37 if low else 3.71))
+            for j in range(bays):
+                pitch=n/bays
+                at=(j+.50)*pitch-n/2
+                w=pitch-.66
+                face.box(details,at,.023,z+1.579,w,.082,1.525,roof)
+                for i in (0,1,2,3):
+                    face.box(details,at+(i-1.5)*w*.232,.069,z+1.59,w*.219,.022,1.375,rng.choice(glass))
+                for i in range(5):
+                    face.box(details,at+(i-2)*w*.24,.084,z+1.593,.038,.053,1.53,metal_gray)
+                for zoff in (.874,1.56,2.28):
+                    face.box(details,at,.085,z+zoff,w+.048,.051,.043,metal_gray)
+        for i in range(round(n/3.72)+1):
+            u=min(n/2-.16,-n/2+.16+i*3.72)
+            vertical_post(face,structure,u,depth+.065,z+.035,z+STOREY-.105,.208,.24,cream)
+            if fl==0:
+                face.blocker(u-.12,u+.12,depth-.12,depth+.16)
+    if ends:
+        face.box(structure,0,depth*.52,top-.009,n+.68,depth+1.38,.242,roof)
+        face.box(structure,0,depth+1.05,top+.007,n+.75,.124,.297,plaster)
+        for i in range(round(n/.205)):
+            u=-n/2+i*.205
+            face.box(structure,u,depth*.65,top-.146,.032,depth+1.0,.042,roof)
+    else:
+        face.box(structure,0,depth*.53,top,n+.38,depth+1.05,.238,roof)
+        face.box(structure,0,depth+1.00,top,n+.42,.118,.26,plaster)
+    face.level(-n/2,n/2,-.025,depth+.026,GROUND)
+    if ends:
+        for side in (-1,1):
+            u=side*(n/2+.06)
+            face.box(structure,u,depth*.5,.42,.189,depth,.84,cream)
+            face.blocker(u-.091,u+.091,0,depth)
+    # Ground-floor doors alternate with window banks. A plaster ribbon fills
+    # the sill and the dark brick wall sections visible from the long hall.
+    room_records=sorted(doors,key=lambda record: record[0])
+    cuts=[(u-1.079,u+1.079) for u,*_ in room_records]
+    if cross is not None:
+        cuts.append((cross-1.19,cross+1.19))
+    for a,b in runs(n,cuts):
+        if b-a<.10:
             continue
-        for strand in range(rng.randint(2,4)):
-            angle = rng.uniform(0,math.tau)
-            length = rng.uniform(.035,.137)
-            plants.leaf((x+rng.uniform(-.08,.08),y+rng.uniform(-.08,.08),-.003),
-                        (math.cos(angle),math.sin(angle),rng.uniform(.76,1.95)),
-                        length,rng.uniform(.010,.027),rng.choice(leaf_mats))
-for i in range(890):
-    center_x = rng.choice((-9.35,-7.65,5.18,6.7,8.35))
-    x,y = center_x+rng.uniform(-.87,.87),rng.uniform(-23.8,24.1)
-    angle = rng.uniform(0,math.tau)
-    z = .043 if abs(x+9.35)<1.3 or abs(x-5.18)<1.37 or abs(y+17.1)<1.18 or abs(y-13)<1.4 else .003
-    plants.leaf((x,y,z),(math.cos(angle),math.sin(angle),.08),
-                rng.uniform(.035,.151),rng.uniform(.021,.067),rng.choice(dry_leaves))
-mulch.finish(noShadow=True)
-plants.finish(noShadow=True)
+        c=(a+b)/2
+        w=b-a
+        face.box(structure,c,-.116,GROUND+.403,w,.251,.806,
+                 brick if brick_ground else lab_wall)
+        face.box(structure,c,-.116,GROUND+2.869,w,.251,.435,
+                 brick if brick_ground else lab_wall)
+        face.blocker(a,b,-.247,.013)
+        if brick_ground or w<.94 or (abs(c) > n/2-4.6 and room_records):
+            face.box(structure,c,-.117,GROUND+1.71,w,.251,1.876,brick)
+            if w>1.83 and (brick_ground or rng.random()<.49):
+                notice_board(face,details,c-.32,.043,GROUND+1.48,.34,.489,blue_strip=True)
+                if w>2.20:
+                    notice_board(face,details,c+.25,.04,GROUND+1.45,.32,.429)
+            continue
+        width=max(.61,w-.58)
+        nwin=max(1,round(width/2.60))
+        size=width/nwin
+        for i in range(nwin):
+            at=c+(i+.5)*size-width/2
+            grille(face,details,glazing,at,.035,GROUND+1.678,size-.084,1.72,
+                   open_window=(i==1 and low is False),frosted_window=not low)
+            if shutters_after is not None and at>shutters_after:
+                for side in (-1,1):
+                    panel=at+side*size*.339
+                    face.box(details,panel,.161,GROUND+1.665,size*.25,.068,1.68,shutter)
+                    for sl in range(16):
+                        face.box(details,panel,.203,GROUND+.939+sl*.095,size*.22,.032,.023,slat)
+        for x in (c-width*.5-.12,c+width*.5+.12):
+            face.box(structure,x,-.119,GROUND+1.717,.25,.24,1.89,lab_wall)
+        if w>2.44 and rng.random()<.73:
+            ac_unit(face,services,c-.31,.225,GROUND+.407)
+        if w>3.7 and rng.random()<.62:
+            extract_fan(face,details,c+.57,GROUND+2.373,.228)
+    for u,words,is_open in room_records:
+        low_z,top_z=make_door(face,details,glazing,u,2.04,words,is_open,group)
+        face.box(structure,u,-.144,(top_z+GROUND+STOREY)/2,2.148,.295,
+                 GROUND+STOREY-top_z,lab_wall)
+        if is_open:
+            visible_lab(face,u,labs)
+        else:
+            face.blocker(u-1.082,u+1.082,-.27,.145)
+            if rng.random()<.55:
+                notice_board(face,details,u+.51,.116,low_z+1.425,.364,.52,blue_strip=True)
+    if cross is not None:
+        face.box(structure,cross,-.117,GROUND+2.878,2.38,.249,.443,brick)
+    for j in range(round(n/3.85)):
+        u=-n/2+1.38+j*3.85
+        face.box(services,u,depth*.56,GROUND+2.793,1.16,.095,.039,tube_light)
+        face.box(services,u,depth*.56,GROUND+2.827,1.22,.127,.041,roof)
+        if j%4==0 and construction:
+            loc=face.point(u,depth*.51,GROUND+2.60)
+            light=bpy.data.objects.new('Đèn hắt hành lang',None)
+            utilities.objects.link(light)
+            light.location=loc
+            light['courtyardLight']='corridor'
+    if construction:
+        # Continuous perforated cable tray on the courtyard side, and the
+        # cream drainpipes and larger bends recorded on the outer side.
+        if face is inner_face:
+            tray_v=.443
+            z=GROUND+2.778
+            face.box(services,0,tray_v,z,n-.055,.312,.045,rail)
+            face.box(services,0,tray_v-.164,z+.049,n-.054,.03,.121,rail)
+            face.box(services,0,tray_v+.163,z+.049,n-.054,.03,.121,rail)
+            for i in range(int(n/.195)):
+                u=-n/2+.094+i*.195
+                row_shift=.044 if i%2 else 0
+                for v in (-.088,.005,.093):
+                    face.box(services,u+row_shift,tray_v+v,z-.025,.05,.018,.004,backing)
+            for i in range(int(n/1.92)+1):
+                u=-n/2+.28+i*1.92
+                if u>n/2: break
+                face.box(services,u,tray_v,z-.041,.095,.417,.065,frame)
+                for v in (tray_v-.185,tray_v+.186):
+                    face.line(services,(u,v,z-.014),(u,v,GROUND+3.05),.012,roof,5)
+            for i in range(3):
+                pts=[(u,.174+i*.026,GROUND+2.655+.03*i-.054*math.sin(u*.6+i)**2)
+                     for u in np.linspace(-n/2+.01,n/2-.01,72)]
+                services.tube([face.point(*p) for p in pts],.012,backing,5)
+        for u in np.linspace(-n/2+.43,n/2-.43,11):
+            if any(abs(u-p)<1.3 for p,*_ in room_records): continue
+            drainpipe(face,services,u,GROUND+.012,top)
+        if face is west_face:
+            for i,u in enumerate((-20.8,-15.62,-10.54)):
+                z=GROUND+2.05
+                pts=[(u,-.070,z),(u,.23,z),(u,.38,z+.17),(u,.38,z+.58),
+                     (u-.17,.38,z+.77),(u-.24,.315,z+.83)]
+                services.tube([face.point(*p) for p in pts],(.169,.169,.162,.149,.14,.121),
+                              roof,13,irregular=.040)
+    structure.finish()
+    details.finish()
+    glazing.finish(noShadow=True)
+    services.finish()
 
-# Keep the recognizable trees, shrine and lettered benches from the source scene.
-original = collection('Khu B | Cảnh gốc')
-before = set(scene.objects)
+
+outer_doors=[(west_face.u_at(WEST,y),label,opened) for y,label,opened in OUTER_ROOMS]
+inner_doors=[(inner_face.u_at(INNER,y),label,opened) for y,label,opened in INNER_ROOMS]
+inner_join=inner_face.u_at(INNER,CROSS_HALL_Y)
+east_join=east_face.u_at(EAST,CROSS_HALL_Y)
+gallery(west_face,faculty,'Mặt ngoài dãy phòng lab',ends=False,doors=outer_doors,
+        breaks=[(west_face.u_at(WEST,3.52),2.37)], joins=[(-27.5,-25.12),(25.12,27.5)],
+        cross=west_face.u_at(WEST,CROSS_HALL_Y),construction=True)
+gallery(inner_face,faculty,'Mặt nhìn vào sân trong',ends=False,doors=inner_doors,
+        joins=[(-27.5,-25.12),(inner_join-1.19,inner_join+1.19),(25.12,27.5)],
+        cross=inner_join,construction=True)
+gallery(entry_face,faculty,'Mặt biển khoa và hai bậc vào',ends=False,brick_ground=True,
+        breaks=[(-3.64,2.42),(3.58,2.42)])
+gallery(return_face,faculty,'Bẻ góc hành lang cạnh cụm nhà ghép',ends=False,
+        breaks=[(-3.63,2.12)],brick_ground=True)
+gallery(bar_south,tower,'Thanh ngang phía vườn có chữ B',ends=False,
+        breaks=[(-6.39,1.89),(6.25,1.93)], doors=[(-3.95,(),False),(1.18,(),False),(3.4,(),False)],
+        junction_offset=.024)
+gallery(bar_north,tower,'Thanh ngang phía sân sau',ends=False,
+        doors=[(-4.25,(),False),(1.55,(),False),(4.55,(),False)],junction_offset=.024)
+gallery(east_face,tower,'Cánh đối diện của khối B',ends=False,
+        breaks=[(-22.4,2.16),(22.8,2.18)], joins=[(-27.5,-25.12),(east_join-1.19,east_join+1.19),(25.12,27.5)],
+        doors=[(-18.2,(),False),(-9.55,(),False),(-1.33,(),False),(8.15,(),False),(17.00,(),False)],
+        shutters_after=east_face.u_at(EAST,-13.5))
+gallery(c_face,low_wing,'Khối C nhìn sang hành lang khoa',storeys=2,depth=1.47,
+        doors=[(-18.1,(),False),(-6.6,(),False),(6.45,(),False),(17.1,(),False)],
+        breaks=[(-12.6,2.37)],low=True)
+gallery(c_back,low_wing,'Mặt ngoài khối C về đường bao',storeys=2,depth=1.50,low=True)
+
+for face,u,width,depth,length,mat in [
+    (entry_face,-3.64,2.42,GALLERY,1.51,terrazzo),(entry_face,3.58,2.42,GALLERY,1.49,terrazzo),
+    (return_face,-3.63,2.12,GALLERY,1.42,terrazzo),
+    (west_face,west_face.u_at(WEST,3.52),2.37,GALLERY,1.02,terrazzo),
+    (bar_south,-6.39,1.89,GALLERY,1.19,brick),(bar_south,6.25,1.93,GALLERY,1.20,brick),
+    (east_face,-22.4,2.16,GALLERY,1.32,brick),(east_face,22.8,2.18,GALLERY,1.17,brick),
+    (c_face,-12.6,2.37,1.47,1.15,terrazzo)
+]:
+    base_steps(face,u,width,depth=depth,length=length,mat=mat)
+
+shells=Geometry('Khối mái, góc giao và các mặt hậu',tower)
+for x0,x1,y0,y1,storeys in [(WEST,INNER,SOUTH,NORTH,3),
+                            (INNER,EAST,CROSS_SOUTH,CROSS_NORTH,3),
+                            (EAST,EAST_OUT,SOUTH,NORTH,3),(C_WEST,C_EAST,SOUTH,NORTH+.58,2)]:
+    top=GROUND+storeys*STOREY
+    shells.box(((x0+x1)/2,(y0+y1)/2,top+.019),(x1-x0,y1-y0,.218),roof)
+    for y in (y0+.105,y1-.105):
+        shells.box(((x0+x1)/2,y,top+.083),(x1-x0,.153,.23),plaster)
+    for x in (x0+.085,x1-.085):
+        shells.box((x,(y0+y1)/2,top+.082),(.15,y1-y0,.237),plaster)
+for x0,x1,y0,y1 in [(WEST-GALLERY,WEST,SOUTH-GALLERY,SOUTH),
+                     (INNER,INNER+GALLERY,SOUTH-GALLERY,SOUTH),
+                     (WEST-GALLERY,WEST,NORTH,NORTH+GALLERY),
+                     (INNER,INNER+GALLERY,NORTH,NORTH+GALLERY)]:
+    for floor_index in range(4):
+        z=GROUND+floor_index*STOREY-.006
+        slab(shells,x0,x1,y0,y1,z,corridor_tiles if not floor_index else cream,
+             depth=.175 if not floor_index else .215)
+    floor(x0,x1,y0,y1,GROUND,GROUND)
+
+# Close the raised slab at the signed corner down to the grass.
+slab(shells,INNER,INNER+GALLERY,SOUTH-GALLERY,SOUTH,GROUND-.176,cream,depth=GROUND-.176)
+shells.box((INNER+GALLERY-.04,SOUTH-GALLERY*.5,.093),(.12,GALLERY,.186),skirting)
+shells.box((INNER+GALLERY*.5,SOUTH-GALLERY+.08,.093),(GALLERY,.16,.186),skirting)
+collider(INNER,INNER+GALLERY,SOUTH-GALLERY-.07,SOUTH-GALLERY+.10)
+
+def end_wall(mesh,x0,x1,y,levels,material):
+    height=GROUND+STOREY*levels
+    mesh.box(((x0+x1)/2,y,height/2),(x1-x0,.236,height),material)
+    facing=-1 if y==SOUTH else 1
+    for floor_index in range(levels):
+        for j in range(3):
+            x=x0+(j+.5)*(x1-x0)/3
+            z=GROUND+1.63+floor_index*STOREY
+            mesh.box((x,y+facing*.153,z),(1.7,.073,1.05),frame)
+            for offset in (-.45,0,.45):
+                mesh.box((x+offset,y+facing*.195,z),(.412,.039,.88),glass[(j+floor_index)%len(glass)])
+    collider(x0,x1,y-.12,y+.12)
+
+for edge in (SOUTH,NORTH):
+    end_wall(shells,EAST,EAST_OUT,edge,3,cream)
+    end_wall(shells,C_WEST,C_EAST,edge,2,brick)
+z=GROUND+STOREY*3
+shells.box((EAST_OUT,(SOUTH+NORTH)/2,z/2),(.24,NORTH-SOUTH,z),cream)
+for floor_index in range(3):
+    for i in range(16):
+        y=SOUTH+1.72+i*3.27
+        h=GROUND+1.67+floor_index*STOREY
+        shells.box((EAST_OUT+.145,y,h),(.081,1.86,1.13),frame)
+        for j in range(3):
+            shells.box((EAST_OUT+.19,y+(j-1)*.541,h),(.04,.50,.954),glass[(i+j)%len(glass)])
+collider(EAST_OUT-.12,EAST_OUT+.12,SOUTH,NORTH)
+# Middle bar of the H: upper slabs continue through, while the covered
+# ground-floor passage joins the recorded brick corridor in B's west arm.
+for k in range(4):
+    z=GROUND+STOREY*k
+    slab(shells,INNER,EAST,CROSS_SOUTH,CROSS_NORTH,z,plaster,depth=.19)
+for y in (CROSS_SOUTH+.14,CROSS_NORTH-.14):
+    shells.box(((INNER+EAST)/2,y,GROUND+1.36),(EAST-INNER,.25,2.72),brick)
+    collider(INNER,EAST,y-.125,y+.125)
+for x in (INNER+2.92,INNER+7.46,INNER+11.88):
+    shells.box((x,CROSS_HALL_Y,GROUND+2.64),(1.25,.115,.048),tube_light)
+floor(INNER,EAST,3.35,5.70,GROUND,GROUND)
+shells.finish()
+
+cross_hall=Geometry('Hành lang gạch ngang giữa hai mặt dãy phòng lab',faculty)
+lo,hi=3.35,5.70
+slab(cross_hall,WEST,INNER,lo,hi,GROUND,corridor_tiles,depth=.181)
+slab(cross_hall,WEST,INNER,lo,hi,GROUND+STOREY,plaster,depth=.202)
+floor(WEST,INNER,lo,hi,GROUND,GROUND)
+for y in (lo-.099,hi+.099):
+    cross_hall.box(((WEST+INNER)/2,y,GROUND+1.46),(INNER-WEST,.191,2.92),brick)
+    collider(WEST,INNER,y-.097,y+.097)
+    for x in (-21.54,-19.24,-16.85,-14.83):
+        for direction in (1,-1):
+            if (direction>0)!=(y<3.5): continue
+            cross_hall.box((x,y+direction*.11,GROUND+1.6),(.45,.033,.55),paper)
+for x in (-21.43,-18.22,-14.41):
+    cross_hall.box((x,(lo+hi)/2,GROUND+STOREY-.14),(1.11,.105,.049),tube_light)
+cross_hall.finish()
+
+# The exterior bridge in 4187 is at the entrance approached from the sign.
+# Its floor runs above the concrete walk and does not close the courtyard.
+bridge=Geometry('Cầu nối tầng một ngay lối vào sân B',faculty)
+x0,x1=INNER+GALLERY-.09,EAST-GALLERY+.09
+y0,y1=BRIDGE_Y-.93,BRIDGE_Y+.93
+deck=GROUND+STOREY
+slab(bridge,x0,x1,y0,y1,deck,cream,depth=.31)
+for y in (y0+.111,y1-.112):
+    bridge.box(((x0+x1)/2,y,deck+.253),(x1-x0,.246,.54),cream)
+    railing(bridge,(x0,y,deck+.51),(x1,y,deck+.51),.36)
+    for x in (x0+.20,x1-.26):
+        bridge.box((x,y,(deck-.3)/2),(.263,.255,deck-.30),cream)
+        collider(x-.14,x+.14,y-.14,y+.14)
+bridge.finish()
+
+staircase=Geometry('Thang hai vế bên phải cầu nối sân B',faculty)
+for flight in range(2):
+    z0=flight*(STOREY/2)
+    x=.48+flight*1.13
+    y0=BRIDGE_Y-3.26 if not flight else BRIDGE_Y-.46
+    direction=1 if not flight else -1
+    for i in range(9):
+        y=y0+direction*(i+.5)*.30
+        z=GROUND+z0+STOREY/2*(i+1)/9
+        staircase.box((x,y,z-.075),(1.10,.302,.15),terrazzo)
+        staircase.box((x,y-direction*.12,z-.024),(1.11,.065,.052),rail)
+    y1=y0+direction*2.70
+    for off in (-.55,.55):
+        railing(staircase,(x+off,y0,GROUND+z0),(x+off,y1,GROUND+z0+STOREY/2),.92)
+        staircase.bar((x+off,y0,GROUND+z0-.12),(x+off,y1,GROUND+z0+STOREY/2-.12),.087,cream,8)
+    collider(x-.56,x+.56,min(y0,y1),max(y0,y1))
+staircase.box((1.04,BRIDGE_Y-.16,GROUND+STOREY/2-.11),(2.24,.83,.23),cream)
+staircase.box((1.94,BRIDGE_Y-3.52,GROUND+STOREY-.11),(2.66,.79,.23),cream)
+staircase.box((1.63,BRIDGE_Y-1.86,GROUND+STOREY-.11),(1.63,3.06,.22),cream)
+railing(staircase,(.74,BRIDGE_Y-3.89,deck),(3.23,BRIDGE_Y-3.89,deck),.92)
+staircase.finish()
+
+signs=Geometry('Biển xanh mới, mặt chữ B và bảng sơ đồ chân thang',faculty)
+u,v,z=2.36,GALLERY+.191,GROUND+STOREY+.391
+entry_face.box(signs,u,v,z,5.27,.075,.684,blue)
+entry_face.box(signs,u,v+.047,z,5.18,.024,.593,plate_blue)
+for side in (-1,1):
+    entry_face.line(signs,(u+side*2.335,v+.065,z),(u+side*2.335,v+.088,z),.201,paper,24)
+    entry_face.line(signs,(u+side*2.335,v+.086,z),(u+side*2.335,v+.093,z),.164,blue,24)
+    entry_face.line(signs,(u+side*2.335,v+.091,z),(u+side*2.335,v+.099,z),.139,paper,24)
+    entry_face.line(signs,(u+side*2.335,v+.097,z),(u+side*2.335,v+.106,z),.086,
+                    red if side < 0 else plate_blue,16)
+entry_face.text(faculty,'TRƯỜNG ĐẠI HỌC CÔNG NGHỆ KỸ THUẬT TP. HỒ CHÍ MINH',
+                u,v+.082,z+.178,.109)
+entry_face.text(faculty,'KHOA HÓA HỌC VÀ KHOA HỌC SỰ SỐNG',u,v+.080,z+.016,.205)
+entry_face.text(faculty,'FACULTY OF CHEMISTRY AND LIFE SCIENCES',u,v+.079,z-.186,.102)
+board_angle=-.50
+board=Facade(-12.29,-25.37,math.sin(board_angle),-math.cos(board_angle),.93)
+board.box(signs,0,0,1.19,.93,.063,1.67,frame)
+board.box(signs,0,.046,1.19,.87,.029,1.61,paper)
+board.text(faculty,'SƠ ĐỒ PHÒNG KHU B',0,.064,1.89,.066,plate_blue)
+for col in (-.275,.075):
+    board.box(signs,col,.065,1.37,.085,.006,.79,metal_gray)
+    for row in range(7):
+        board.box(signs,col,.067,1.04+row*.109,.189,.006,.024,blue)
+board.box(signs,-.10,.065,1.36,.35,.006,.084,metal_gray)
+for i in range(12):
+    board.box(signs,.276,.067,.81+i*.069,.151+(i%3)*.024,.006,.009,metal_gray)
+for dx in (-.37,.37):
+    board.line(signs,(dx,0,0),(dx,0,1.72),.034,rail)
+board.blocker(-.47,.47,-.07,.07)
+entry_light=bpy.data.objects.new('Đèn hắt bảng khoa',None)
+utilities.objects.link(entry_light)
+entry_light.location=entry_face.point(u,GALLERY+1.27,z-.22)
+entry_light['courtyardLight']='gallery'
+bar_south.text(tower,'B',.62,GALLERY+.184,GROUND+STOREY+.428,1.06,plate_blue)
+signs.finish()
+
+# The adjacent footprints are positioned from the supplied plan. The garden
+# is west of the library, between the south end of C and the north end of D.
+wing(neighbors,'Khối D quay ra vườn miếu',-34.15,-60.45,38.2,11.25,3,1,chemistry=False)
+wing(neighbors,'Mặt thư viện nhìn về phía miếu',-22.70,-37.9,17.65,34.05,4,-1,chemistry=True)
+wing(neighbors,'Dãy A phía gần vườn',-22.3,-62.6,32.0,10.35,2,-1)
+wing(neighbors,'Dãy A phía còn lại',11.20,-62.6,32.0,9.60,2,1)
+
+adjacent=Geometry('Ốp gạch đỏ, đầu hồi C và lối vào thư viện',neighbors)
+for x,y,w,d,h in [(-22.28,-30.25,1.12,3.25,12.1),(-33.33,-43.0,1.66,3.37,9.7)]:
+    adjacent.box((x,y,h*.5),(w,d,h),cladding)
+    for floor_index in range(3):
+        z=2.0+floor_index*3.05
+        adjacent.box((x,y-d/2-.07,z),(.735,.123,1.12),frame)
+        adjacent.box((x,y-d/2-.143,z),(.621,.049,.927),glass[2])
+        adjacent.box((x+.025,y-d/2-.18,z),(.05,.032,1.02),rail)
+    collider(x-w*.5,x+w*.5,y-d*.5,y+d*.5)
+library_front=Facade(-5.7,-29.075,0,1,34)
+for floor_index in range(4):
+    z=1.61+floor_index*STOREY
+    for j in range(9):
+        u=-14.4+j*3.37
+        library_front.box(adjacent,u,.107,z,2.6,.23,1.24,frame)
+        for k in (-1,0,1):
+            library_front.box(adjacent,u+k*.8,.249,z,.747,.08,1.048,glass[2])
+library_front.box(adjacent,.9,.154,3.18,5.06,.25,.72,cladding)
+library_front.text(neighbors,'THƯ VIỆN',.9,.303,3.18,.39)
+for y in (-46.4,-29.15):
+    adjacent.box((-5.6,y,6.25),(34.05,.26,12.5),cladding)
+    collider(-22.65,11.44,y-.13,y+.13)
+adjacent.finish()
+
+# 4187 02:08–02:48 shows planting as layered, low curved edges with the
+# palm and two columns of drooping foliage in the middle.
+hedge_bed=Geometry('Bồn xây cong và hàng viền cắt tỉa',site)
+hedge_leaves=Geometry('Lá thường xanh trên hàng viền',trees)
+border_stone=tiled('Đá nâu ốp chân bồn cong',(.396,.286,.237),'stone',1.7)
+mulch_texture=tiled('Đất ẩm dưới tán',(.276,.240,.170),'soil',2.6)
+hedge_top=tiled('Mặt hàng cây cắt tỉa',(.258,.365,.181),'hedge',1.2)
+hedge_edge=tiled('Cạnh hàng cây cắt tỉa',(.215,.31,.149),'hedge',1.2)
+BED_X,BED_Y=-5.42,-12.65
+BED_RX,BED_RY=2.72,6.89
+
+
+def ellipse(cx,cy,rx,ry,a,z):
+    return (cx+rx*math.cos(a),cy+ry*math.sin(a),z)
+
+
+def hedge(cx,cy,rx,ry,height, *, from_angle=0,to_angle=math.tau):
+    n=round(69*(to_angle-from_angle)/math.pi)
+    for i in range(n):
+        a=from_angle+(to_angle-from_angle)*i/n
+        b=from_angle+(to_angle-from_angle)*(i+1)/n
+        contour=[ellipse(cx,cy,rx,ry,ang,z) for ang,z in ((a,.003),(b,.003),(b,.205),(a,.205))]
+        hedge_bed.add(contour,[(0,1,2,3)],border_stone)
+        rim=[ellipse(cx,cy,rx-off,ry-off,theta,z)
+             for off,theta,z in [(-.073,a,.193),(-.073,b,.193),(-.073,b,.255),(-.073,a,.255),
+                                 (.17,a,.255),(.17,b,.255)]]
+        hedge_bed.add(rim,[(0,1,2,3),(3,2,5,4)],terrazzo)
+        upper=[ellipse(cx,cy,rx-.135,ry-.135,theta,z)
+               for theta,z in ((a,.236),(b,.236),(b,height-.067),(a,height-.070))]
+        inner=[ellipse(cx,cy,rx-.75,ry-.75,theta,z)
+               for theta,z in ((a,height-.06),(b,height-.055),(b,.237),(a,.237))]
+        top=[upper[-1],upper[-2],inner[1],inner[0]]
+        hedge_bed.add(upper,[(0,1,2,3)],hedge_edge)
+        hedge_bed.add(inner,[(0,1,2,3)],hedge_edge)
+        hedge_bed.add(top,[(0,1,2,3)],hedge_top)
+        for j in range(21):
+            theta=rng.uniform(a,b)
+            d=rng.uniform(.10,.83)
+            z=height+rng.uniform(-.065,.045)
+            if j%3==0:
+                d=rng.choice((.105,.778))+rng.uniform(-.035,.038)
+                z=rng.uniform(.29,height-.02)
+            p=ellipse(cx,cy,rx-d,ry-d,theta,z)
+            phi=rng.uniform(0,math.tau)
+            length=rng.uniform(.074,.144)
+            hedge_leaves.leaf(p,(math.cos(phi),math.sin(phi),rng.uniform(-.63,.67)),
+                              length,rng.uniform(.034,.077),rng.choice(green_hedge))
+    for j in range(0,n,4):
+        a=from_angle+(to_angle-from_angle)*(j+.5)/n
+        x,y,_=ellipse(cx,cy,rx-.36,ry-.36,a,0)
+        collider(x-.56,x+.56,y-.56,y+.56)
+
+
+hedge(BED_X,BED_Y,BED_RX,BED_RY,.66)
+hedge(-5.43,-12.58,1.90,4.92,.83,from_angle=.10,to_angle=3.33)
+hedge(-5.4,-12.59,1.24,3.03,.76,from_angle=3.30,to_angle=6.32)
+center=(BED_X,BED_Y,.035)
+floor_points=[center]+[ellipse(BED_X,BED_Y,BED_RX-.23,BED_RY-.23,i*math.tau/76,.035) for i in range(76)]
+hedge_bed.add(floor_points,[(0,i+1,(i+1)%76+1) for i in range(76)],mulch_texture)
+hedge_bed.finish()
+hedge_leaves.finish(noShadow=True)
+
+beds=Geometry('Nắp hố kỹ thuật, ống tưới và bảng thấp cạnh bồn',site)
+for ox,oy,w,d,mat in [(-3.79,-8.63,1.10,.92,artificial_turf),(-2.55,-9.17,.93,.77,artificial_turf),
+                    (-4.51,12.77,.72,.61,terrazzo),(13.21,15.65,.94,.67,walkway),
+                    (-5.25,23.79,.69,.81,walkway),(11.76,-9.48,.68,.86,walkway)]:
+    x,y=court_position(ox,oy)
+    beds.box((x,y,.061),(w*.70,d*.72,.125),mat,angle=.05)
+    beds.box((x,y,.124),(w*.70-.057,d*.72-.06,.019),mat,angle=.05)
+hose=[(-7.88,-16.62,.10),(-8.13,-16.58,.038),(-8.42,-16.81,.031),
+      (-8.36,-17.19,.035),(-8.02,-17.34,.03),(-7.71,-17.19,.042),
+      (-7.88,-16.92,.054),(-7.78,-16.60,.224),(-7.77,-16.60,.63)]
+beds.tube(hose,.018,conduit,8)
+beds.bar((-7.77,-16.60,.02),(-7.77,-16.60,.64),.033,rail,8)
+beds.box((-7.74,-16.51,.58),(.68,.052,.32),roof,angle=.19)
+for dx in (-.24,.24):
+    beds.bar((-7.74+dx,-16.50,0),(-7.74+dx,-16.50,.72),.023,rail)
+for i in range(6):
+    beds.box((-7.74,-16.548,.697-i*.037),(.51-i*.043,.012,.008),plaster,angle=.19)
+beds.finish()
+
+vegetation=Geometry('Cọ, cụm lá rủ và cây sứ sân trong',trees)
+foliage=Geometry('Lá thật dựng bằng lưới',trees)
+
+
+def palm(x,y,h,spread):
+    p=Vector((x,y,0))
+    stem=[p+Vector((t*t*.28,-t*.17,t*h)) for t in (0,.18,.4,.59,.78,1)]
+    vegetation.tube(stem,(.27,.218,.199,.181,.161,.18),light_bark,12,irregular=.073)
+    for i in range(25):
+        t=(i+.45)/25
+        p2=p+Vector((t*t*.28,-t*.17,t*h))
+        vegetation.bar(p2,p2+Vector((0,0,.021)),.19+.024*(1-t),light_bark,8)
+    center=stem[-1]
+    for i in range(19):
+        theta=i*2.39996
+        a=Vector((math.cos(theta),math.sin(theta),0))
+        b=Vector((-a.y,a.x,0))
+        size=spread*rng.uniform(.65,1.04)
+        points=[center+a*(size*t)+Vector((0,0,size*(.66*math.sin(t*2.45)-t*.82))) for t in np.linspace(0,1,8)]
+        vegetation.tube(points,[.028*(1-j/8) for j in range(8)],green_hedge[2],5)
+        for j in range(19):
+            t=(j+1)/20
+            bucket=min(6,int(t*7))
+            pt=points[bucket].lerp(points[bucket+1],t*7-bucket)
+            for flip in (-1,1):
+                length=size*(.073+.25*math.sin(t*math.pi))*rng.uniform(.84,1.10)
+                foliage.leaf(pt,a*.59+b*flip*.83+Vector((0,0,-.28)),length,length*.135,rng.choice(green_hedge))
+    collider(x-.25,x+.25,y-.25,y+.25)
+
+
+def hanging_crown(x,y,h,radius):
+    p=Vector((x,y,0))
+    vegetation.tube([p,p+Vector((-.14,.11,h*.44)),p+Vector((.09,.14,h*.87)),p+Vector((.21,.15,h))],
+                     (.178,.128,.076,.025),light_bark,10,irregular=.092)
+    for i in range(35):
+        a=i*2.39996
+        level=rng.uniform(.50,.98)
+        r=radius*rng.uniform(.55,1.10)*math.sin((level-.38)*math.pi/1.15)
+        start=p+Vector((.09,.13,h*level))
+        end=start+Vector((r*math.cos(a),r*math.sin(a),rng.uniform(.17,.65)))
+        vegetation.tube([start,start.lerp(end,.61),end],(.048,.023,.008),dark_bark,6)
+        for j in range(34):
+            pt=start.lerp(end,rng.uniform(.40,1.06))+Vector((rng.uniform(-.29,.29),rng.uniform(-.29,.29),rng.uniform(-.32,.27)))
+            phi=rng.uniform(0,math.tau)
+            l=rng.uniform(.37,.85)
+            foliage.leaf(pt,(math.cos(phi)*.54,math.sin(phi)*.54,-rng.uniform(.87,1.6)),
+                         l,l*.20,rng.choice(green_hedge))
+    collider(x-.18,x+.18,y-.18,y+.18)
+
+
+def plumeria(x,y,h,size,phase):
+    p=Vector((x,y,-.06))
+    q=Vector((math.cos(phase),math.sin(phase),0))
+    k=Vector((-q.y,q.x,0))
+    trunk=[p,p+q*.13+Vector((0,0,.47)),p-q*.24+Vector((0,0,h*.28)),
+           p+q*.09+Vector((0,0,h*.41)),p+q*.26+Vector((0,0,h*.59))]
+    vegetation.tube(trunk,(.33,.27,.222,.17,.11),dark_bark,12,irregular=.25)
+    for i in range(7):
+        theta=i*2.39996+phase
+        a=Vector((math.cos(theta),math.sin(theta),0))
+        a2=Vector((-a.y,a.x,0))
+        root=trunk[2+i%3]
+        mid=root+a*size*.35+Vector((0,0,h*.14))
+        end=root+a*size*rng.uniform(.75,1.035)+Vector((0,0,h*rng.uniform(.27,.44)))
+        vegetation.tube([root,root.lerp(mid,.45),mid,mid.lerp(end,.52)+k*.14,end],
+                         (.112,.094,.069,.044,.013),dark_bark,8,irregular=.23)
+        for j in range(5):
+            f=(j+2)/7
+            at=mid.lerp(end,f)
+            tip=at+a*rng.uniform(.31,.76)+((-1)**j)*a2*rng.uniform(.31,.79)+Vector((0,0,h*.13))
+            vegetation.tube([at,at.lerp(tip,.49),tip],(.031,.022,.007),light_bark,6,irregular=.12)
+            for leaf in range(2 if j%3 else 7):
+                angle=theta+leaf*1.15
+                foliage.leaf(tip+Vector((rng.uniform(-.075,.075),rng.uniform(-.075,.075),0)),
+                             (math.cos(angle),math.sin(angle),.18),rng.uniform(.19,.37),.076,rng.choice(leaf_mats))
+    collider(x-.32,x+.32,y-.32,y+.32)
+
+
+palm(-5.49,-8.04,4.31,2.39)
+hanging_crown(-5.95,-15.70,5.93,1.38)
+hanging_crown(-4.92,-12.26,6.34,1.39)
+for i,(x,y,h,r) in enumerate([
+    (-27.19,2.22,5.6,2.8),(-26.31,-11.56,5.54,2.82),(-30.1,-23.48,4.76,2.98),
+    (-12.15,-19.04,5.1,2.61),
+    (-9.94,-18.2,4.85,2.26),(-9.88,-5.64,5.4,2.49),(-1.38,-7.37,5.02,2.63),
+    (-27.4,-29.3,5.99,3.42),(-37.10,-28.5,5.18,3.21),(-31.50,-37.1,4.92,2.52)
+]):
+    plumeria(x,y,h,r,i*.98)
+vegetation.finish()
+foliage.finish()
+
+for i,(x,y,h,r,w,gray) in enumerate([
+    (-47.45,-17.2,15.9,4.52,.46,True),(-47.16,-5.1,16.4,4.7,.52,True),
+    (-47.39,12.22,17.1,4.8,.51,False),(-47.36,25.62,15.4,4.4,.39,False),
+    (-27.83,-17.6,14.6,4.59,.57,False),(-31.61,-10.81,15.6,4.5,.51,True),
+    (-27.46,-2.81,16.02,4.97,.54,False),(-31.90,13.8,17.34,4.92,.57,True),
+    (-28.38,33.62,13.1,4.38,.41,True),(-17.89,37.51,15.24,4.98,.51,False),
+    (-8.40,36.85,15.77,4.43,.49,False),(-.10,-5.51,14.98,4.36,.61,False),
+    (-8.1,-10.1,15.9,4.92,.52,True),(-2.95,-18.88,16.7,4.46,.59,False),
+    (-6.65,24.13,13.40,4.5,.44,True),(-37.57,-24.80,15.97,4.81,.43,True),
+    (-6.99,-24.58,15.4,4.63,.58,False),(-2.85,-27.15,11.73,3.56,.36,True),
+    (-33.15,-29.31,17.1,5.46,.68,False),(-31.80,-36.31,16.35,4.96,.62,False),
+    (-39.14,-34.92,15.56,4.61,.51,True),(-38.95,-39.75,15.78,4.91,.57,False),
+    (-28.91,-43.44,14.88,4.66,.42,True),(-30.35,-61.53,14.34,4.41,.51,False),
+    (-30.21,-70.16,16.42,4.72,.53,True)
+]):
+    broad_tree(f'Cây cao {i+1:02}',x,y,h,r,w,gray)
+
+for i,y in enumerate((-19.76,-16.1,-11.23,-7.85)):
+    bench(f'Ghế đá sát lối bê tông {i+1}',-10.13,y,math.pi/2)
+bench('Ghế đá trắng cạnh ngã rẽ',-4.72,-24.53,.10)
+for i,(x,y,a) in enumerate([(.03,-17.02,-math.pi/2),(.03,-9.83,-math.pi/2),
+                            (-28.97,-25.51,.12),(-32.28,-26.11,-.04),(-35.45,-31.0,.84),
+                            (-37.91,-37.95,.25),(-28.15,-39.44,-.75),(-40.36,-29.13,.20)]):
+    bench(f'Ghế đá trong vườn {i+1}',x,y,a,brown=i in (0,3,6))
+for x,y,brown in [(-35.46,-26.81,True),(-39.14,-38.11,False),(-31.61,-39.13,True),(-39.96,-27.22,False)]:
+    seating(x,y,brown)
+
+shrine_court=Geometry('Bệ và hàng rào thấp ở vườn miếu',furniture)
+x,y=SHRINE
+slab(shrine_court,x-1.83,x+1.83,y-1.59,y+1.59,.039,terrazzo)
+for side in (-1,1):
+    edge=x+side*1.83
+    railing(shrine_court,(edge,y-1.60,.072),(edge,y+1.58,.072),.53)
+    collider(edge-.064,edge+.064,y-1.60,y+1.58)
+for a,b in [(x-1.81,x-.80),(x+.80,x+1.81)]:
+    railing(shrine_court,(a,y+1.58,.065),(b,y+1.58,.065),.53)
+shrine_court.finish()
+
+grass=Geometry('Cỏ thấp, đất gốc và lá khô',trees)
+grass_areas=[
+    (-48.96,-46.89,SOUTH,NORTH),(-33.67,-25.70,SOUTH,7.08),
+    (INNER+GALLERY,EAST-GALLERY,SOUTH,-3.30),
+    (INNER+GALLERY,EAST-GALLERY,13.40,NORTH),
+    (-47.31,-26.20,-40.0,-24.14),(-33.42,-26.00,-78.9,-42.25),
+]
+for x0,x1,y0,y1 in grass_areas:
+    for i in range(int((x1-x0)*(y1-y0)*4.25)):
+        x,y=rng.uniform(x0,x1),rng.uniform(y0,y1)
+        if ((x-BED_X)/(BED_RX+.04))**2+((y-BED_Y)/(BED_RY+.04))**2<1:
+            continue
+        for j in range(2):
+            phi=rng.uniform(0,math.tau)
+            l=rng.uniform(.049,.145)
+            grass.leaf((x+rng.uniform(-.06,.06),y+rng.uniform(-.06,.06),-.011),
+                       (math.cos(phi),math.sin(phi),1.6),l,l*.212,rng.choice(green_hedge))
+for i in range(380):
+    x=rng.choice((-9.38,-1.31,-29.02))+rng.uniform(-.71,.71)
+    y=rng.uniform(-22.2,-3.31)
+    a=rng.uniform(0,math.tau)
+    l=rng.uniform(.052,.13)
+    grass.leaf((x,y,.06),(math.cos(a),math.sin(a),.06),l,l*.37,rng.choice(dry_leaves))
+grass.finish(noShadow=True)
+
+# 4185 01:04–01:34: the strip in front of the outside parapet switches
+# from lawn to parked cars and scooters, with the low bridge into the lot.
+def parked_car(x,y,angle,color):
+    mesh=Geometry('Ô tô đỗ khu hành lang ngoài',parking)
+    co,si=math.cos(angle),math.sin(angle)
+    def point(a,b,z):
+        return (x+a*co-b*si,y+a*si+b*co,z)
+    p=[(-2.22,.63,.29,.61),(-2.07,.84,.27,.75),(-1.63,.91,.31,.845),
+       (-.73,.922,.29,.90),(.4,.93,.28,.867),(1.47,.87,.31,.78),(2.11,.79,.37,.63)]
+    vertices=[]
+    for at,w,low,high in p:
+        vertices.extend([point(at,a,z) for a,z in
+                         [(-w*.87,low),(w*.87,low),(w,high-.10),(w*.82,high),
+                          (-w*.82,high),(-w,high-.10)]])
+    faces=[tuple(reversed(range(6))),tuple(range(len(vertices)-6,len(vertices)))]
+    for i in range(len(p)-1):
+        faces.extend((i*6+j,i*6+(j+1)%6,(i+1)*6+(j+1)%6,(i+1)*6+j) for j in range(6))
+    mesh.add(vertices,faces,color,smooth=True)
+    sides=[point(-1.50,-.77,.85),point(1.14,-.78,.82),point(.39,-.60,1.53),
+           point(-.82,-.64,1.59),point(-1.50,.77,.85),point(1.14,.78,.82),
+           point(.39,.60,1.53),point(-.82,.64,1.59)]
+    mesh.add(sides,[(3,2,6,7)],color)
+    mesh.add(sides,[(0,1,2,3),(7,6,5,4),(1,5,6,2),(4,0,3,7)],glass[1])
+    for side in (-1,1):
+        mesh.tube([point(-1.5,side*.77,.85),point(-.82,side*.64,1.59),
+                   point(.39,side*.60,1.53),point(1.14,side*.78,.82)],.035,color,7)
+        mesh.bar(point(-.26,side*.778,.85),point(-.21,side*.637,1.569),.028,frame)
+        for wheel in (-1.44,1.40):
+            mesh.tube([point(wheel,side*.746,.344),point(wheel,side*.937,.344)],.337,charcoal,18)
+            mesh.tube([point(wheel,side*.940,.344),point(wheel,side*.956,.344)],.226,rail,18)
+            for spoke in range(5):
+                a=spoke*math.tau/5
+                mesh.bar(point(wheel,side*.962,.344),
+                         point(wheel+.194*math.cos(a),side*.963,.344+.194*math.sin(a)),.020,frame)
+        mesh.box(point(2.055,side*.53,.62),(.10,.32,.113),headlight,angle=angle)
+        mesh.box(point(-2.147,side*.52,.60),(.06,.34,.120),red,angle=angle)
+        mesh.box(point(.59,side*.922,1.06),(.248,.244,.108),color,angle=angle)
+    mesh.box(point(2.056,0,.52),(.093,.516,.205),backing,angle=angle)
+    mesh.box(point(2.112,0,.53),(.03,.35,.099),paper,angle=angle)
+    mesh.box(point(-2.194,0,.484),(.046,.38,.111),paper,angle=angle)
+    mesh.finish()
+    dx=abs(co)*2.21+abs(si)*.95
+    dy=abs(si)*2.21+abs(co)*.95
+    collider(x-dx,x+dx,y-dy,y+dy)
+
+
+for i,(x,y,a) in enumerate([(-29.78,13.79,.045),(-29.22,17.72,-.061),(-29.6,21.57,.07),
+                             (-29.3,25.51,-.049),(-29.70,28.42,.01),
+                             (-6.11,44.3,.087),(-13.09,44.5,-.19),(-30.3,36.3,math.pi/2)]):
+    parked_car(x,y,a,vehicle_paint[i%len(vehicle_paint)])
+lot=Geometry('Bãi xe máy cạnh lối gạch · nền sỏi và rào ống',parking)
+path(lot,-33.45,-25.90,-22.42,-16.46,asphalt,top=.018,joints=False)
+for start,end in [((-33.45,-22.33),(-27.50,-22.33)),((-33.45,-22.33),(-33.45,-16.58)),
+                  ((-25.91,-22.33),(-25.91,-19.33))]:
+    a,b=Vector(start),Vector(end)
+    intervals=math.ceil((b-a).length/.76)
+    for i in range(intervals):
+        p,q=a.lerp(b,i/intervals),a.lerp(b,(i+1)/intervals)
+        lot.bar((*p,.28),(*q,.28),.028,(plate_yellow,red)[i%2])
+        if i%2==0:
+            lot.bar((*p,0),(*p,.71),.033,rail)
+    lot.bar((*a,.69),(*b,.69),.029,rail)
+    lot.bar((*b,0),(*b,.71),.033,rail)
+    collider(min(a.x,b.x)-.05,max(a.x,b.x)+.05,min(a.y,b.y)-.05,max(a.y,b.y)+.05)
+lot.finish()
+
+motorcycles=Geometry('Xe máy ở sân B, bên lối gạch và ngoài bãi ô tô',parking)
+bikes=[
+    (-8.66,-5.42,1.39),(-7.88,-5.77,1.62),(-24.25,37.6,1.81),(-26.74,36.45,-.63),
+    (-31.55,10.69,-.55),(-31.77,9.62,-.61),(-32.1,8.58,-.61),
+    (-25.58,-35.31,math.pi/2),(-24.87,-35.62,math.pi/2)
+]
+for row,y in enumerate((-21.23,-19.22,-17.49)):
+    for column in range(8):
+        bikes.append((-32.72+column*.81+(row%2)*.21,y+rng.uniform(-.15,.15),
+                      (-1 if row==1 else 1)*1.40+rng.uniform(-.15,.15)))
+for i,(x,y,angle) in enumerate(bikes):
+    scooter(motorcycles,x,y,angle,[bike_blue,bike_dark,bike_red,bike_gray][i%4],i)
+    hx=abs(math.cos(angle))*.88+abs(math.sin(angle))*.38
+    hy=abs(math.sin(angle))*.88+abs(math.cos(angle))*.38
+    collider(x-hx,x+hx,y-hy,y+hy)
+motorcycles.finish()
+
+portable=Geometry('Nhà ghép xanh hai tầng đối diện cuối hành lang',outer)
+for index,(x0,x1,mat_upper) in enumerate([(-24.8,-19.52,shed_blue),(-19.52,-13.7,shed_lime),
+                                         (-13.7,-7.85,shed_lime),(-7.85,-3.24,shed_lime)]):
+    for z0,z1,mat in [(0,2.69,shed_teal),(2.69,5.33,mat_upper)]:
+        portable.box(((x0+x1)/2,53.60,(z0+z1)/2),(x1-x0,6.1,z1-z0),mat)
+        portable.box(((x0+x1)/2,50.48,z1-.105),(x1-x0+.04,.171,.165),roof)
+        for j in range(round((x1-x0)/.23)):
+            x=x0+.058+j*.23
+            portable.box((x,50.523,(z0+z1)/2),(.036,.065,z1-z0-.16),mat)
+        for off in (-.28,.28):
+            x=(x0+x1)/2+off*(x1-x0)
+            z=z0+(1.69 if z0 else 1.29)
+            portable.box((x,50.46,z),(.79,.09,.71 if z0 else .97),cream)
+            portable.box((x,50.405,z),(.66,.025,.58 if z0 else .82),glass[2])
+            portable.box((x,50.386,z),(.027,.027,.61 if z0 else .86),rail)
+    collider(x0,x1,50.55,56.65)
+for x,y in [(-20.3,49.72),(-10.05,49.8),(-4.07,49.76)]:
+    for i in range(14):
+        portable.box((x-.323+i*.218,y,.189*(i+1)),(.221,.85,.078),roof)
+    for off in (-.43,.43):
+        railing(portable,(x-.45,y+off,.035),(x+2.73,y+off,2.64),.82)
+portable.finish()
+
+context=Geometry('Tường và các nhà xa ở rìa sơ đồ',outer)
+context.box((-60.1,6.3,5.10),(4.0,43.17,10.2),cream)
+context.box((-60.1,6.3,10.19),(4.25,43.34,.18),plaster)
+for i in range(3):
+    for j in range(10):
+        y=-13.7+j*4.06
+        z=1.63+i*3.05
+        context.box((-58.03,y,z),(.111,1.46,1.05),frame)
+        for off in (-.452,0,.452):
+            context.box((-57.93,y+off,z),(.072,.39,.92),glass[(i+j)%len(glass)])
+context.box((-56.76,-17.6,.67),(.17,121.8,1.33),plaster)
+collider(-56.85,-56.67,-78.5,43.3)
+for y in (-83.9,48.80):
+    for x0,x1 in [(-56.6,-50.83),(16.0,24.78)]:
+        context.box(((x0+x1)/2,y,1.13),(x1-x0,.24,2.27),plaster)
+context.finish()
+
+props=Geometry('Ghế nhựa, tủ lạnh, can và thùng rác thấy trong video',utilities)
+def plastic_stool(face,u,v,z,mat=stool_blue):
+    face.box(props,u,v,z+.44,.301,.29,.061,mat)
+    face.box(props,u,v,z+.463,.217,.093,.026,mat)
+    for a in (-.111,.111):
+        for b in (-.105,.105):
+            face.line(props,(u+a*1.195,v+b*1.205,z),(u+a,v+b,z+.43),.034,mat,5)
+    for off in (-.121,.121):
+        face.box(props,u,v+off,z+.165,.245,.048,.051,mat)
+
+
+def jug(face,u,v,z,mat):
+    face.box(props,u,v,z+.169,.197,.163,.332,mat)
+    face.line(props,(u-.039,v,z+.323),(u-.039,v,z+.378),.045,mat,8)
+    face.line(props,(u-.039,v,z+.377),(u-.039,v,z+.393),.048,red,8)
+    face.line(props,(u+.049,v,z+.292),(u+.062,v,z+.369),.022,mat,6)
+
+
+for face,world_y,to_wall in [(west_face,-12.3,.34),(west_face,19.0,.30),(west_face,23.1,.44),
+                             (inner_face,13.65,.372),(inner_face,-1.64,.44),(inner_face,-17.01,.28)]:
+    u=face.u_at(face.origin[0],world_y)
+    plastic_stool(face,u,to_wall,GROUND)
+for y in (15.46,16.25,17.10,18.67,21.98):
+    u=west_face.u_at(WEST,y)
+    jug(west_face,u,.22,GROUND,cream if y<18 else paper)
+    west_face.box(props,u,.33,GROUND+.003,.65,.70,.006,plate_yellow)
+for face,y in [(west_face,.39),(return_face,33.0)]:
+    u=west_face.u_at(WEST,y) if face is west_face else -1.95
+    face.box(props,u,.38,GROUND+.801,.597,.658,1.60,metal_gray)
+    face.box(props,u,.731,GROUND+.80,.557,.052,1.52,plaster)
+    face.box(props,u,.764,GROUND+.991,.568,.026,.025,frame)
+    for off in (-.018,.333):
+        face.box(props,u+.184,.782,GROUND+.951+off,.039,.034,.222,rail)
+    face.blocker(u-.305,u+.305,.07,.72)
+for x,y in [(-26.60,3.19),(-31.62,5.94),(-25.68,35.58),(-10.48,-3.82)]:
+    props.tube([(x,y,.016),(x,y,.21),(x,y,.337)],(.120,.176,.190),cream,15)
+    for j in range(9):
+        a=j*2.39996
+        props.leaf((x,y,.322),(math.cos(a),math.sin(a),rng.uniform(.47,1.56)),
+                   rng.uniform(.21,.38),.11,rng.choice(green_hedge))
+for x,y in [(-30.99,-26.33),(-1.73,-6.97),(-26.5,33.89),(-34.23,-38.79)]:
+    props.bar((x,y,.021),(x,y,1.11),.035,rail,8)
+    for sign,mat in [(-1,red),(1,green)]:
+        a=x+sign*.207
+        props.tube([(a,y,.137),(a,y,.77)],(.141,.171),mat,13)
+        props.tube([(a,y,.784),(a,y,.817)],.175,roof,13)
+        props.box((a,y,1.02),(.399,.43,.084),mat)
+    collider(x-.35,x+.35,y-.20,y+.20)
+for x,y in [(-8.44,-6.47),(-8.31,-5.49),(-9.69,-5.18)]:
+    props.bar((x,y,0),(x,y,.74),.028,rail)
+for a,b in [((-8.44,-6.47,.66),(-8.31,-5.49,.665)),((-8.31,-5.49,.66),(-9.69,-5.18,.665))]:
+    props.bar(a,b,.012,red)
+props.finish()
+
+lights=Geometry('Cột điện, ống kỹ thuật, và đèn sân',utilities)
+for x,y,h in [(-7.76,-17.72,8.7),(*TRANSFORMER,8.37),(-32.91,17.28,8.5),(-36.18,-29.47,8.24)]:
+    lights.tube([(x,y,0),(x,y,h)],(.168,.123),plaster,9,irregular=.032)
+    lights.box((x,y-.163,1.44),(.31,.161,.42),cream)
+    lights.box((x,y-.248,1.46),(.076,.062,.119),frame)
+    collider(x-.162,x+.162,y-.165,y+.162)
+# The transformer and the red corrugated conduits anchor the viewpoint in
+# the lane between the two wings.
+x,y=TRANSFORMER
+for off in (-.32,.36):
+    lights.box((x+off,y,6.25),(.10,1.12,.105),rail)
+    lights.bar((x,y-.08,5.74),(x+off,y-.47,6.24),.052,rail,8)
+lights.box((x+.22,y-.29,6.79),(.79,.75,1.10),frame)
+lights.box((x+.22,y-.29,7.365),(.84,.82,.083),roof)
+for i in range(10):
+    lights.box((x-.156+i*.083,y-.698,6.78),(.033,.145,.938),roof)
+for i in range(3):
+    lights.bar((x+.06+i*.172,y-.31,7.36),(x+.06+i*.172,y-.31,7.56),.053,backing,8)
+for off,side in [(-.29,-1),(.29,1)]:
+    lights.box((x+off,y-.055,1.31),(.31,.30,.551),cream)
+    lights.box((x+off,y-.213,1.32),(.28,.029,.522),plaster)
+    for i in range(5):
+        lights.box((x+off,y-.232,1.26+i*.04),(.10,.021,.014),metal_gray)
+    wire=[(x+off,y-.122,.985),(x+off,y-.118,.819),(x+off*.77,y-.218,.65),
+          (x+.067*side,y-.224,.845),(x+.073*side,y-.221,.15),(x+.096*side,y-.261,.024)]
+    lights.tube(wire,.034,red,9)
+    for i in range(10):
+        z=.14+i*.058
+        lights.bar((x+.072*side,y-.221,z),(x+.072*side,y-.221,z+.018),.038,red,8)
+for a,b in [((*TRANSFORMER,8.29),(-36.18,-29.47,8.16)),
+            ((-36.18,-29.47,8.16),(-32.91,17.28,8.38)),
+            ((-7.76,-17.72,8.62),(*TRANSFORMER,8.29))]:
+    for line in range(3):
+        points=[(a[0]*(1-t)+b[0]*t,a[1]*(1-t)+b[1]*t+.154*line,
+                 a[2]*(1-t)+b[2]*t-4*t*(1-t)*(.54+line*.16)) for t in np.linspace(0,1,17)]
+        lights.tube(points,.011,backing,6)
+for x,y in [(-29.99,1.9),(-10.18,-15.19),(-2.26,-10.1),(-8.3,-4.79),
+            (-7.86,19.3),(-25.96,32.3),(-29.71,-27.3),(-35.17,-31.47),(-37.39,-38.47)]:
+    lights.bar((x,y,.0),(x,y,3.6),.044,rail,8)
+    lights.bar((x,y,3.54),(x+.42,y,3.72),.032,rail)
+    lights.box((x+.45,y,3.69),(.25,.12,.09),roof)
+    lights.box((x+.45,y,3.638),(.216,.098,.02),lamp_glass)
+    light=bpy.data.objects.new('Đèn lối đi',None)
+    utilities.objects.link(light)
+    light.location=(x+.46,y,3.53)
+    light['courtyardLight']='path'
+lights.finish()
+
+# Carry the original shrine and two low concrete seats into the adjacent
+# garden from the earlier photographs.
+original=collection('Khu B | Đồ gốc ở vườn miếu')
+existing=set(scene.objects)
 bpy.ops.import_scene.gltf(filepath=str(ROOT/'hcmute-khu-b.glb'))
-imported = set(scene.objects)-before
-original_root = bpy.data.objects.new('OriginalKhuB', None)
+imported=set(scene.objects)-existing
+original_root=bpy.data.objects.new('OriginalKhuB',None)
 original.objects.link(original_root)
-retained_benches = {'Bench.003', 'Bench.006'}
-for ob in sorted(imported, key=lambda item: item.name):
-    if (ob.name.startswith(('Plane', 'Grass', 'tripo_node_36487')) or
-            (ob.name.startswith('Bench') and ob.name not in retained_benches)):
+benches_original={'Bench.003':(-32.17,-29.95,-.02),'Bench.006':(-31.18,-36.17,-.02)}
+for ob in sorted(imported,key=lambda item:item.name):
+    keep=ob.name.startswith('tripo_node_9f7') or ob.name in benches_original
+    if not keep:
         bpy.data.objects.remove(ob,do_unlink=True)
         continue
     for group in list(ob.users_collection):
         group.objects.unlink(ob)
     original.objects.link(ob)
-    if ob.parent is None:
-        ob.parent = original_root
-    if ob.name in retained_benches:
-        modifier = ob.modifiers.new('Lưới tối ưu cho game web', 'DECIMATE')
-        modifier.ratio = .16
-    if ob.name.startswith('tripo_node_9f7'):
-        ob.location = (0,14,0)
-for name, roughness in [('Tree', .87), ('Leaves_NormalTree', .79)]:
-    mat = bpy.data.materials[name]
-    shader = mat.node_tree.nodes.get('Principled BSDF')
-    shader.inputs['Metallic'].default_value = 0
-    shader.inputs['Roughness'].default_value = roughness
-    if name.startswith('Leaves'):
-        mat.use_backface_culling = False
-        mat.alpha_threshold = .36
+    ob.parent=original_root
+    if ob.name in benches_original:
+        ob.location=benches_original[ob.name]
+        modifier=ob.modifiers.new('Giảm mật độ lưới cho bản web','DECIMATE')
+        modifier.ratio=.17
+    else:
+        ob.location=(SHRINE[0],SHRINE[1],.03)
+        ob.rotation_mode='QUATERNION'
+        ob.rotation_quaternion=Quaternion((0,0,1),math.pi)
 
-bpy.ops.export_scene.gltf(filepath=str(ROOT/'assets'/'khu-b-courtyard.glb'),
-                         export_format='GLB', export_extras=True, export_yup=True, export_apply=True,
-                         export_cameras=False, export_lights=False, export_animations=False,
-                         export_image_format='AUTO')
+asset=ROOT/'assets'/'khu-b-courtyard.glb'
+with tempfile.TemporaryDirectory(dir=asset.parent) as temporary:
+    scratch=Path(temporary)/asset.name
+    bpy.ops.export_scene.gltf(filepath=str(scratch),export_format='GLB',
+                             export_extras=True,export_yup=True,export_apply=True,
+                             export_cameras=False,export_lights=False,export_animations=False)
+    scratch.replace(asset)
 
-# Matching gameplay camera and a daylight camera make the new scene easy to inspect.
-studio = collection('Góc nhìn và ánh sáng xem trước')
-sun_data = bpy.data.lights.new('Nắng chiều khu B','SUN')
-sun_data.energy = 2.25
-sun_data.angle = math.radians(11)
-sun = bpy.data.objects.new(sun_data.name,sun_data)
+studio=collection('Góc đối chiếu với video')
+sun_data=bpy.data.lights.new('Nắng xiên sân Khu B','SUN')
+sun_data.energy=2.55
+sun_data.angle=math.radians(10)
+sun=bpy.data.objects.new(sun_data.name,sun_data)
 studio.objects.link(sun)
-sun.rotation_euler = (math.radians(16),math.radians(31),math.radians(14))
-scene.world = bpy.data.worlds.new('Trời sáng')
-scene.world.use_nodes = True
-background = scene.world.node_tree.nodes.get('Background')
-background.inputs['Color'].default_value = (.53,.63,.80,1)
-background.inputs['Strength'].default_value = 1.08
+sun.rotation_euler=Vector((-.48,-.09,-.87)).to_track_quat('-Z','Y').to_euler()
+scene.world=bpy.data.worlds.new('Trời nhiều mây nhẹ')
+scene.world.use_nodes=True
+background=scene.world.node_tree.nodes.get('Background')
+background.inputs['Color'].default_value=(.527,.67,.851,1)
+background.inputs['Strength'].default_value=1.06
 
 
 def camera(name,position,target,lens):
@@ -1017,43 +2011,68 @@ def camera(name,position,target,lens):
     ob.location=position
     ob.rotation_euler=(Vector(target)-Vector(position)).to_track_quat('-Z','Y').to_euler()
     data.lens=lens
+    data.clip_end=310
     return ob
 
 
-scene.camera = camera('Lối đi cạnh nhà hai tầng',(-9.38,-16.82,1.70),(-5.6,8,3.14),24)
-front_camera = camera('Bậc thềm khoa Hóa',(-7.95,4.25,1.75),(-11.3,9.0,3.3),22)
-parking_camera = camera('Lối đi sát bãi xe',(5.18,-14.9,1.7),(8.37,9,3.2),23)
-overhead = camera('Toàn cảnh khu B', (29,-49,35),(-1,0,1.2),44)
+cameras={
+    'cua-khoa':camera('Ảnh mới · Bảng khoa bên trái và lối vào sân B',(*JUNCTION,1.73),(-13.32,-18.7,2.24),12.6),
+    're-phai':camera('Từ ngã rẽ phải nhìn vào sân và cầu thang ngoài',(-1.39,-26.92,1.73),(-3.98,-13.62,2.10),16.8),
+    'hanh-lang':camera('4187 · Máng cáp và cửa lab',(-11.55,28.90,GROUND+1.70),(-12.30,17.42,GROUND+1.62),17.8),
+    'san-trong':camera('Ảnh 5 · Bồn cong dưới chữ B',(-9.09,-18.90,1.73),(-4.95,-2.45,2.45),19.7),
+    'cau-noi':camera('4187 · Dưới cầu nối nhìn theo lối bê tông',(-9.36,-23.6,1.73),(-8.6,-9.6,1.92),17.8),
+    'vuon-mieu':camera('Lối gạch · Vườn miếu bên trái, xe máy bên phải',(-25.98,-26.58,1.73),(-36.37,-29.08,1.75),16.8),
+    'duong-ngoai':camera('4185 · Hết hành lang ngoài B',(-24.02,33.96,GROUND+1.70),(-15.42,53.56,2.77),20),
+    'toan-canh':camera('Mặt bằng · Chữ H, dãy C, D và thư viện',(-5,-28,112),(-16,-17,0),30),
+}
+plan_camera=camera('Mặt bằng trực giao',(-17,-17.5,165),(-17,-17.5,0),30)
+plan_camera.data.type='ORTHO'
+plan_camera.data.ortho_scale=142
+plan_camera.rotation_euler=(0,0,0)
+scene.camera=cameras['cua-khoa']
 scene.render.engine='CYCLES'
-scene.cycles.samples=12
-scene.cycles.max_bounces=5
-scene.cycles.transparent_max_bounces=5
+scene.cycles.samples=10
 scene.cycles.use_denoising=True
-scene.render.resolution_x=1320
-scene.render.resolution_y=785
+scene.cycles.max_bounces=5
+scene.cycles.transparent_max_bounces=8
+scene.render.resolution_x=1410
+scene.render.resolution_y=840
 scene.render.resolution_percentage=100
 scene.render.image_settings.file_format='JPEG'
 scene.render.image_settings.quality=91
 scene.view_settings.view_transform='AgX'
-scene.view_settings.exposure=.45
+scene.view_settings.exposure=.60
 scene.render.filepath='//'
-
 bpy.ops.file.pack_all()
 for screen in bpy.data.screens:
     for area in screen.areas:
         if area.type=='VIEW_3D':
-            area.spaces.active.region_3d.view_distance=32
-            area.spaces.active.region_3d.view_location=(0,1,2)
-            area.spaces.active.region_3d.view_rotation=overhead.rotation_euler.to_quaternion()
-            area.spaces.active.shading.color_type='MATERIAL'
-            area.spaces.active.shading.show_cavity = True
-            area.spaces.active.overlay.show_extras = False
+            view=area.spaces.active
+            view.clip_end=400
+            view.region_3d.view_distance=105
+            view.region_3d.view_location=(-19,-16,0)
+            view.region_3d.view_rotation=cameras['toan-canh'].rotation_euler.to_quaternion()
+            view.region_3d.view_perspective='PERSP'
+            view.shading.color_type='MATERIAL'
+            view.shading.show_cavity=True
+            view.overlay.show_extras=False
+bpy.ops.object.select_all(action='DESELECT')
+bpy.context.view_layer.objects.active=None
 bpy.context.preferences.filepaths.save_version=0
 bpy.ops.wm.save_as_mainfile(filepath=str(ROOT/'khu-b-mo-rong.blend'),compress=True)
 
 if '--preview' in sys.argv:
-    prefix = sys.argv[-1]
-    for label, angle in [('loi-di', scene.camera), ('khoa-hoa', front_camera), ('bai-xe', parking_camera)]:
-        scene.camera = angle
-        scene.render.filepath = f'{prefix}-{label}.jpg'
+    preview_args=sys.argv[sys.argv.index('--preview')+1:]
+    prefix,*selected=preview_args
+    for name,view in cameras.items():
+        if selected and name not in selected:
+            continue
+        scene.camera=view
+        scene.render.filepath=f'{prefix}-{name}.jpg'
+        bpy.ops.render.render(write_still=True)
+    if not selected or 'mat-bang' in selected:
+        scene.camera=plan_camera
+        scene.render.resolution_x=990
+        scene.render.resolution_y=1400
+        scene.render.filepath=f'{prefix}-mat-bang.jpg'
         bpy.ops.render.render(write_still=True)

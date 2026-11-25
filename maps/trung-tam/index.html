@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#142632">
+  <title>Tòa nhà Trung tâm · HCMUTE</title>
+  <link rel="stylesheet" href="./viewer.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "../../vendor/three/three.module.js",
+        "three/addons/": "../../vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="scene" aria-label="Cổng trường và Tòa nhà Trung tâm"></canvas>
+  <div class="aim" aria-hidden="true"></div>
+  <main id="menu" class="menu">
+    <div class="menu-panel">
+      <a class="back" href="../index.html">← Chọn bản đồ</a>
+      <h1>Tòa nhà Trung tâm</h1>
+      <p class="map-description">Cổng Võ Văn Ngân, sân kỷ niệm và sảnh hành chính</p>
+      <div class="viewpoints" aria-label="Điểm bắt đầu">
+        <button type="button" data-view="cong" aria-pressed="true" disabled>Cổng trường</button>
+        <button type="button" data-view="toa-nha" aria-pressed="false" disabled>Sân trung tâm</button>
+        <button type="button" data-view="sanh" aria-pressed="false" disabled>Sảnh hành chính</button>
+      </div>
+      <div class="entry">
+        <button id="enter" class="enter" type="button" disabled>Đang tải…</button>
+        <span class="controls"><kbd>WASD</kbd> đi · <kbd>Chuột</kbd> nhìn · <kbd>Esc</kbd> mở menu</span>
+      </div>
+      <p class="notice" id="notice" role="status"></p>
+    </div>
+  </main>
+  <script type="module" src="./viewer.js"></script>
+</body>
+</html>

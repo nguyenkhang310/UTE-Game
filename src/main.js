@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CONFIG } from './config.js';
 import { createEnvironment } from './world/environment.js';
 import { loadWorld } from './world/worldLoader.js';
 import { Player } from './player/player.js';
@@ -13,8 +14,6 @@ const renderer = new THREE.WebGLRenderer({
   antialias: true,
   powerPreference: 'high-performance',
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
-renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -31,20 +30,24 @@ const audio = new AudioSystem(scene, camera);
 
 let player = null;
 let shrine = null;
+let world = null;
 let ready = false;
 let hasShownIntro = false;
 let hasShownLoopHint = false;
 
 function resize() {
-  camera.aspect = window.innerWidth / window.innerHeight;
+  const { innerWidth: width, innerHeight: height } = window;
+  const { maxPixelRatio, maxPixels } = CONFIG.render;
+  camera.aspect = width / height;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio, Math.sqrt(maxPixels / (width * height))));
+  renderer.setSize(width, height);
 }
 window.addEventListener('resize', resize);
+resize();
 
 try {
-  const world = await loadWorld(scene, renderer, (progress) => hud.setLoading(progress));
+  world = await loadWorld(scene, renderer, (progress) => hud.setLoading(progress));
 
   shrine = new ShrineSystem(scene, world, audio, hud);
 
@@ -114,6 +117,7 @@ renderer.setAnimationLoop(() => {
 
   if (ready) {
     player?.update(dt);
+    world.updateLighting(camera.position);
     flashlight.update(dt);
     shrine?.update(dt, camera.position, clock.elapsedTime);
   }

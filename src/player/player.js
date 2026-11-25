@@ -125,7 +125,10 @@ export class Player {
   _floorHeight(x, z) {
     for (const floor of this.floors) {
       if (x >= floor.minX && x <= floor.maxX && z >= floor.minZ && z <= floor.maxZ) {
-        const t = (x - floor.minX) / (floor.maxX - floor.minX);
+        const across = floor.axis !== 'depth';
+        const offset = across ? x - floor.minX : floor.maxZ - z;
+        const span = across ? floor.maxX - floor.minX : floor.maxZ - floor.minZ;
+        const t = offset / span;
         return THREE.MathUtils.lerp(floor.start, floor.end, t);
       }
     }
@@ -157,20 +160,18 @@ export class Player {
   // kèm tiếng xì radio do audio system phát.
   _handleSpatialLoop(dt) {
     this.loopCooldown = Math.max(0, this.loopCooldown - dt);
-    if (this.loopCooldown > 0) return;
+    const position = this.camera.position;
+    const { zMin, zMax } = CONFIG.bounds;
+    if (position.z >= zMin && position.z <= zMax) return;
 
-    const z = this.camera.position.z;
-    const limit = CONFIG.bounds.zLoop;
-
-    if (z > limit) {
-      this.camera.position.z = z - limit * 2;
-      this.loopCooldown = 1.2;
-      this.onLoop?.();
-    } else if (z < -limit) {
-      this.camera.position.z = z + limit * 2;
-      this.loopCooldown = 1.2;
-      this.onLoop?.();
+    if (this.loopCooldown > 0) {
+      position.z = THREE.MathUtils.clamp(position.z, zMin, zMax);
+      return;
     }
+
+    position.z += (zMax - zMin) * (position.z < zMin ? 1 : -1);
+    this.loopCooldown = 1.2;
+    this.onLoop?.();
   }
 
   _onKeyDown(event) {

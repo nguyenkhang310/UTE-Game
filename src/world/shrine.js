@@ -13,6 +13,7 @@ export class ShrineSystem {
     this.audio = audio;
     this.hud = hud;
     this.center = new THREE.Vector3(CONFIG.shrine.x, 0, CONFIG.shrine.z);
+    this.incenseOrigin = this.center.clone().addScaledVector(world.shrineFront, 0.3);
     this.path = world.shadowPath;
 
     this.near = false;
@@ -24,19 +25,20 @@ export class ShrineSystem {
     this.shadowActive = false;
     this.shadowTime = 0;
 
-    this._buildLight();
-    this._buildGlow();
+    this._buildLight(world.shrineFront);
+    this._buildGlow(world.shrineFront);
     this._buildSmoke();
     this._buildShadow();
   }
 
-  _buildLight() {
+  _buildLight(front) {
     this.light = new THREE.PointLight(0xff3300, 7, 15, 2);
-    this.light.position.set(CONFIG.shrine.x, 1.15, CONFIG.shrine.z + 0.2);
+    this.light.position.copy(this.center).addScaledVector(front, 0.2);
+    this.light.position.y = 1.15;
     this.scene.add(this.light);
   }
 
-  _buildGlow() {
+  _buildGlow(front) {
     const material = new THREE.SpriteMaterial({
       map: makeGlowTexture(),
       color: 0xffb27a,
@@ -46,7 +48,8 @@ export class ShrineSystem {
       fog: false,
     });
     this.glow = new THREE.Sprite(material);
-    this.glow.position.set(CONFIG.shrine.x, 1.5, CONFIG.shrine.z + 0.35);
+    this.glow.position.copy(this.center).addScaledVector(front, 0.35);
+    this.glow.position.y = 1.5;
     this.glow.scale.setScalar(2.2);
     this.scene.add(this.glow);
   }
@@ -56,9 +59,9 @@ export class ShrineSystem {
     const positions = new Float32Array(count * 3);
     this.smokeVel = [];
     for (let i = 0; i < count; i++) {
-      positions[i * 3] = CONFIG.shrine.x + rand(-0.07, 0.07);
+      positions[i * 3] = this.incenseOrigin.x + rand(-0.07, 0.07);
       positions[i * 3 + 1] = 1.15;
-      positions[i * 3 + 2] = CONFIG.shrine.z + 0.3 + rand(-0.07, 0.07);
+      positions[i * 3 + 2] = this.incenseOrigin.z + rand(-0.07, 0.07);
       this.smokeVel.push(new THREE.Vector3(rand(-0.08, 0.08), rand(0.2, 0.45), rand(-0.08, 0.08)));
     }
 
@@ -182,9 +185,9 @@ export class ShrineSystem {
   startSmoke() {
     const position = this.smoke.geometry.attributes.position;
     for (let i = 0; i < position.count; i++) {
-      position.array[i * 3] = CONFIG.shrine.x + rand(-0.06, 0.06);
+      position.array[i * 3] = this.incenseOrigin.x + rand(-0.06, 0.06);
       position.array[i * 3 + 1] = 1.12;
-      position.array[i * 3 + 2] = CONFIG.shrine.z + 0.3 + rand(-0.06, 0.06);
+      position.array[i * 3 + 2] = this.incenseOrigin.z + rand(-0.06, 0.06);
       this.smokeVel[i].set(rand(-0.08, 0.08), rand(0.2, 0.45), rand(-0.08, 0.08));
     }
     position.needsUpdate = true;

@@ -7,22 +7,25 @@ const rand = (min, max) => min + Math.random() * (max - min);
 // vài nhịp rồi mới ổn định lại.
 export class Flashlight {
   constructor(camera) {
+    this.camera = camera;
     this.on = false;
     this.base = CONFIG.flashlight.intensity;
     this.nextFlicker = rand(4, 8);
     this.flickerTime = null;
     this.flickerDuration = 0;
 
-    const { color, distance, angle, penumbra, decay } = CONFIG.flashlight;
+    const { color, distance, angle, penumbra, decay, shadowSize } = CONFIG.flashlight;
     this.spot = new THREE.SpotLight(color, 0, distance, angle, penumbra, decay);
     this.spot.position.set(0.18, -0.12, 0);
-    this.spot.castShadow = true;
-    this.spot.shadow.mapSize.set(1024, 1024);
+    this.spot.shadow.mapSize.set(shadowSize, shadowSize);
+    this.spot.shadow.autoUpdate = false;
     this.spot.shadow.camera.near = 0.2;
     this.spot.shadow.camera.far = 30;
     this.spot.shadow.bias = -0.0009;
     this.spot.shadow.normalBias = 0.025;
     this.spot.shadow.radius = 2;
+    this.shadowPosition = new THREE.Vector3();
+    this.shadowRotation = new THREE.Quaternion();
 
     this.target = new THREE.Object3D();
     this.target.position.set(0.1, -0.03, -8);
@@ -39,7 +42,9 @@ export class Flashlight {
 
   toggle() {
     this.on = !this.on;
+    this.spot.castShadow = this.on;
     if (this.on) {
+      this.spot.shadow.needsUpdate = true;
       this.spot.intensity = this.base;
       this.fill.intensity = 1.1;
       this.flickerTime = null;
@@ -53,6 +58,15 @@ export class Flashlight {
 
   update(dt) {
     if (!this.on) return;
+
+    const { position, quaternion } = this.camera;
+    const shadow = this.spot.shadow;
+    if (shadow.needsUpdate || position.distanceToSquared(this.shadowPosition) >= 0.15 ** 2
+      || quaternion.angleTo(this.shadowRotation) >= 0.035) {
+      shadow.needsUpdate = true;
+      this.shadowPosition.copy(position);
+      this.shadowRotation.copy(quaternion);
+    }
 
     if (this.flickerTime !== null) {
       this.flickerTime += dt;

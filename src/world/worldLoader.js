@@ -32,8 +32,7 @@ export async function loadWorld(scene, renderer, onProgress) {
     }
   });
 
-  // Miếu thờ được tác giả đặt ở gốc toạ độ; dời về cuối vườn để
-  // người chơi có một quãng đi bộ đủ dài trước khi chạm mặt.
+  // Giữ vị trí tương tác cùng tọa độ miếu trong cảnh Blender.
   const shrine = findByNamePrefix(root, shrineName);
   if (shrine) {
     shrine.position.set(CONFIG.shrine.x, CONFIG.shrine.y, CONFIG.shrine.z);
@@ -44,8 +43,13 @@ export async function loadWorld(scene, renderer, onProgress) {
   scene.add(root);
   scene.updateMatrixWorld(true);
 
+  // Mặt thờ của mesh gốc hướng theo trục +Z cục bộ.
+  const shrineFront = new THREE.Vector3(0, 0, 1);
+  shrine?.getWorldDirection(shrineFront);
+
   const colliders = [];
   const floors = [];
+  const lamps = [];
   const box = new THREE.Box3();
   const center = new THREE.Vector3();
 
@@ -89,30 +93,69 @@ export async function loadWorld(scene, renderer, onProgress) {
         maxZ: center.z + halfSize.z,
       };
       if (data.walkCollider) colliders.push({ type: 'box', ...area });
-      else floors.push({ ...area, start: data.floorStart, end: data.floorEnd });
+      else floors.push({
+        ...area,
+        start: data.floorStart,
+        end: data.floorEnd,
+        axis: data.floorAxis || 'x',
+      });
     }
 
     if (data.courtyardLight) {
       const isPath = data.courtyardLight === 'path';
-      const light = new THREE.PointLight(
-        isPath ? 0xffda9e : 0xd3e7f2,
-        isPath ? 21 : 12,
-        isPath ? 10 : 6,
-      );
-      object.getWorldPosition(light.position);
-      scene.add(light);
+      lamps.push({
+        position: object.getWorldPosition(new THREE.Vector3()),
+        color: isPath ? 0xffda9e : 0xd3e7f2,
+        intensity: isPath ? 21 : 12,
+        range: isPath ? 10 : 6,
+        distanceSquared: 0,
+      });
     }
   });
 
+  // Ưu tiên bậc thềm tại chỗ tiếp giáp với sàn hành lang.
+  const floorArea = (floor) => (floor.maxX - floor.minX) * (floor.maxZ - floor.minZ);
+  floors.sort((a, b) => floorArea(a) - floorArea(b));
   onProgress(1);
 
   return {
     root,
     shrine,
+    shrineFront,
     colliders,
     floors,
+    updateLighting: createLocalLighting(scene, lamps),
     // Khe giữa hai thân cây phía sau miếu, nơi bóng đen sẽ lướt qua.
-    shadowPath: { xFrom: -3.8, xTo: 4.8, z: -16.3 },
+    shadowPath: {
+      xFrom: CONFIG.shrine.x - 3.8,
+      xTo: CONFIG.shrine.x + 4.8,
+      z: CONFIG.shrine.z - 2.3 * shrineFront.z,
+    },
+  };
+}
+
+function createLocalLighting(scene, lamps) {
+  // Reuse the same lights so changing neighborhoods does not recompile materials.
+  const activeLights = lamps.slice(0, CONFIG.render.localLightCount).map(() => {
+    const light = new THREE.PointLight(0xffffff, 0);
+    scene.add(light);
+    return light;
+  });
+  const lastPosition = new THREE.Vector3(Infinity, Infinity, Infinity);
+
+  return (cameraPosition) => {
+    if (lastPosition.distanceToSquared(cameraPosition) < 0.5 ** 2) return;
+    lastPosition.copy(cameraPosition);
+    for (const lamp of lamps) lamp.distanceSquared = lamp.position.distanceToSquared(cameraPosition);
+    lamps.sort((a, b) => a.distanceSquared - b.distanceSquared);
+    for (let index = 0; index < activeLights.length; index++) {
+      const light = activeLights[index];
+      const lamp = lamps[index];
+      light.position.copy(lamp.position);
+      light.color.setHex(lamp.color);
+      light.intensity = lamp.intensity;
+      light.distance = lamp.range;
+    }
   };
 }
 

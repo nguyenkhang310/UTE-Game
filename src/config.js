@@ -7,7 +7,7 @@ export const CONFIG = {
   modelUrl: './assets/khu-b-courtyard.glb',
 
   // Người chơi
-  spawn: { x: -9.35, y: 0, z: 18.9, yaw: -0.24 },
+  spawn: { x: -10.02, y: 0, z: 28.13, yaw: 0.337 },
   eyeHeight: 1.65,
   playerRadius: 0.34,
   walkSpeed: 3.1,
@@ -16,18 +16,24 @@ export const CONFIG = {
 
   // Không gian chơi
   bounds: {
-    xMin: -18.1,
-    xMax: 15.25,
-    zLoop: 21.5, // vượt mốc này sẽ bị "ma che mắt" đưa về đầu bên kia
+    xMin: -56.4,
+    xMax: 23.8,
+    zMin: -46.2,
+    zMax: 82,
   },
 
   // Bầu không khí
   fogColor: 0x0b0e14,
-  fogDensity: 0.034,
+  fogDensity: 0.027,
   backgroundColor: 0x07090d,
+  render: {
+    maxPixelRatio: 1.5,
+    maxPixels: 1920 * 1080,
+    localLightCount: 6,
+  },
 
-  // Miếu thờ (dịch về cuối vườn để có hành trình đi bộ)
-  shrine: { x: 0, y: 0, z: -14 },
+  // Chấm đỏ trong vườn giữa C và D, lệch trái thư viện.
+  shrine: { x: -34.4, y: 0.03, z: 34.65 },
   shrineVoiceRadius: 5,
   shrineInteractRadius: 2.6,
 
@@ -39,5 +45,6 @@ export const CONFIG = {
     angle: Math.PI / 6,
     penumbra: 0.4,
     decay: 1.35,
+    shadowSize: 512,
   },
 };
