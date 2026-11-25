@@ -59,7 +59,7 @@ try {
       hud.hideOverlay();
       if (!hasShownIntro) {
         hasShownIntro = true;
-        hud.showSubtitle('WASD di chuyển · F bật đèn pin · E tương tác', 5200);
+        hud.showSubtitle('WASD di chuyển · Space nhảy · F bật đèn pin · E tương tác', 5200);
       }
     },
     onUnlock: () => {
