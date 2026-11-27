@@ -35,6 +35,8 @@ async function start() {
   });
 
   const { colliders, floors, views, limits } = prepareCampus(scene, model.scene, renderer);
+  const sound = canvas.dataset.sound === 'khu-a'
+    ? (await import('../khu-a/sound.js')).courtyardSound(camera, model.scene) : null;
   const keys = new Set();
   const clock = new THREE.Clock();
   const eyeHeight = 1.69;
@@ -98,6 +100,7 @@ async function start() {
   window.addEventListener('resize', resize);
   window.addEventListener('blur', () => keys.clear());
   window.addEventListener('keydown', (event) => {
+    if (controls.isLocked && event.code === 'Escape') controls.unlock();
     if (!controls.isLocked || !movementKeys.has(event.code)) return;
     event.preventDefault();
     keys.add(event.code);
@@ -105,10 +108,13 @@ async function start() {
   window.addEventListener('keyup', (event) => keys.delete(event.code));
   controls.addEventListener('change', () => { needsRender = true; });
   controls.addEventListener('lock', () => {
+    sound?.enter();
+    needsRender = true;
     notice.textContent = '';
     menu.hidden = true;
   });
   controls.addEventListener('unlock', () => {
+    sound?.pause();
     keys.clear();
     menu.hidden = false;
     enter.textContent = 'Tiếp tục';
@@ -117,7 +123,10 @@ async function start() {
   document.addEventListener('pointerlockerror', () => {
     notice.textContent = 'Trình duyệt chưa khóa được chuột. Bấm nút vào bản đồ để thử lại.';
   });
-  enter.addEventListener('click', () => controls.lock());
+  enter.addEventListener('click', () => {
+    sound?.start();
+    controls.lock();
+  });
   for (const button of viewpointButtons) {
     button.disabled = !views.has(button.dataset.view);
     button.addEventListener('click', () => goTo(button.dataset.view));
@@ -146,6 +155,7 @@ async function start() {
       const nextZ = THREE.MathUtils.clamp(camera.position.z + move.z, limits.minZ, limits.maxZ);
       if (!blocked(nextX, camera.position.z)) camera.position.x = nextX;
       if (!blocked(camera.position.x, nextZ)) camera.position.z = nextZ;
+      sound?.move(camera.position);
       updateShadow();
       needsRender = true;
     }

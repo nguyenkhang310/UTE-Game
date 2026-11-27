@@ -1,6 +1,6 @@
 # UTE Game
 
-Game khám phá góc nhìn thứ nhất mô phỏng khuôn viên HCMUTE. Khu B là cảnh ban đêm có đèn pin, giọng thì thầm và tương tác ở miếu. Tòa nhà Trung tâm và Khu E là hai bản đồ ban ngày.
+Game khám phá góc nhìn thứ nhất mô phỏng khuôn viên HCMUTE. Khu B là cảnh ban đêm có đèn pin, giọng thì thầm và tương tác ở miếu. Trung tâm, Khu E và Khu A dùng cảnh ban ngày. Khu A có sự kiện âm thanh dưới mái che.
 
 ## Chạy và tìm đúng bản đồ
 
@@ -13,6 +13,7 @@ Game khám phá góc nhìn thứ nhất mô phỏng khuôn viên HCMUTE. Khu B l
 | `/maps/index.html` | Trang chọn bản đồ và giao diện chung trong `maps/maps.css` | Ảnh xem trước từng map |
 | `/maps/trung-tam/index.html` | `maps/trung-tam/viewer.js` và `viewer.css` | `maps/trung-tam/trung-tam.glb` |
 | `/maps/khu-e/index.html` | Dùng chung viewer ban ngày trong `maps/trung-tam/` | `maps/khu-e/khu-e.glb` |
+| `/maps/khu-a/index.html` | Viewer ban ngày và `maps/khu-a/sound.js` | `maps/khu-a/khu-a.glb` |
 
 Dùng URL có `index.html` cho các trang trong `/maps/` vì máy chủ chỉ tự mở `index.html` cho đường dẫn `/`.
 
@@ -32,7 +33,7 @@ Dùng URL có `index.html` cho các trang trong `/maps/` vì máy chủ chỉ t�
 
 ## Tòa nhà Trung tâm
 
-- `maps/trung-tam/viewer.js` quản lý di chuyển, chiếu sáng và kiểm tra va chạm cho hai map ban ngày. Từng trang chọn GLB và điểm vào qua `data-model` và `data-start-view`. Các điểm vào được lấy từ mốc trong GLB. Chọn điểm đứng, bấm **Đi bộ**, rồi dùng WASD hoặc phím mũi tên, Shift và Esc.
+- `maps/trung-tam/viewer.js` quản lý di chuyển, chiếu sáng và kiểm tra va chạm cho các map ban ngày. Từng trang chọn GLB và điểm vào qua `data-model` và `data-start-view`. Các điểm vào được lấy từ mốc trong GLB. Chọn điểm đứng, bấm **Đi bộ**, rồi dùng WASD hoặc phím mũi tên, Shift và Esc.
 - Khi nhìn chính diện tòa nhà, sân bóng nằm bên phải, qua đường dọc. Có thể đi qua khe lưới ở cạnh giáp tòa nhà hoặc chọn **Sân bóng** để vào thẳng sân. Đường bên trái uốn quanh vườn và gặp đường ngang phía trước.
 - Bóng nắng cập nhật khi chuyển vùng. Cảnh vẽ lại khi người chơi di chuyển, đổi góc nhìn, chọn điểm đứng hoặc đổi kích thước cửa sổ. Khi sửa render của một map, kiểm tra entry point của map đó trước.
 
@@ -41,6 +42,15 @@ Dùng URL có `index.html` cho các trang trong `/maps/` vì máy chủ chỉ t�
 - Đường nội bộ chạy dọc mép trước vườn. Lối gạch nhiều màu đưa từ đường qua vườn tới Khoa Cơ khí Chế tạo máy. Khoa có hai cánh xanh xám ốp gạch cam, lam trắng ở sảnh lõm và mái đón xanh. Có thể đi lên tam cấp và vào sảnh giữa.
 - Nhà thể thao mái vòm xanh mint đứng bên trái khoa, lối vào mở ra sân xưởng. Bên trong có sân tennis và sân bóng chuyền, lưới chia ở giữa và lối đi vòng ở đầu sân.
 
+## Khu A
+
+- Mở `khu-a-demo.blend`. Trong **Scripting**, mở `tools/build_zone_a.py` (hoặc **Text → Reload** nếu đã mở) rồi **Run Script** để dựng lại phần tự động. Hướng trái/phải lấy theo người đứng ở vỉa hè phía Tòa nhà Trung tâm nhìn vào. Tên và vị trí mười khu có trong [sơ đồ quy ước](personal/khu-a/so-do-quy-uoc-demo-v1.png).
+- Trong Outliner, đặt vật thể mới vào **Khu A · Chi tiết chỉnh tay** → Collection của mã khu. Để thay một vật sinh tự động, nhân bản vật đó sang Collection chỉnh tay, đặt thuộc tính chuỗi `ka_replaces` trên bản sao bằng giá trị `ka_id` của bản gốc, rồi chạy lại script. Vật thể có `ka_walk` bằng `wall` tạo vật cản theo mặt bằng, còn `floor` tạo mặt đứng ở cao độ đỉnh. Với mái che hoặc tán cây cần đi qua bên dưới, chỉ gắn va chạm cho cột hoặc thân.
+- Lưu file Blender rồi xuất từ thư mục gốc bằng `blender -b khu-a-demo.blend --python-exit-code 1 -P tools/export_zone_a.py`. Nếu chỉnh tay trong Blender, bước xuất đọc trực tiếp cảnh vừa lưu. Bản xuất dùng màu nền của các vật liệu thủ tục trong demo.
+- Mở **Chọn bản đồ → Khu A → Vỉa hè → Đi bộ**. Men theo hông phải nhà mái sáng, tới sân nhỏ rồi rẽ vào lối mái che hướng về khối nối. Đi dưới khối nối tới lối lát cạnh bồn cây dài. Các nút **Sân nhỏ** và **Sân cây** cho phép thử riêng từng đoạn.
+- Âm côn trùng đặt ở sân nhỏ. Lần đầu đi từ sân vào một trong hai lối mái che, âm nền giảm và một bước chân phát từ tầng trên. Esc mở menu và ngắt âm. Tải lại trang để thử sự kiện thêm lần nữa.
+- Hai ảnh đối chiếu nằm trong `maps/khu-a/preview-tren-cao.jpg` và `maps/khu-a/preview-mat-dat.jpg`. Đặt tên ảnh tư liệu mới theo mã và hướng nhìn, ví dụ `KA-05_tu-moc-tron_nhin-ve-day-lop.jpg`.
+
 ## Chỉnh cảnh và xuất từ Blender
 
 | Bản đồ | Script nguồn | Kết quả |
@@ -48,8 +58,9 @@ Dùng URL có `index.html` cho các trang trong `/maps/` vì máy chủ chỉ t�
 | Khu B | `tools/build_courtyard.py` | `khu-b-mo-rong.blend`, `assets/khu-b-courtyard.glb` |
 | Trung tâm | `tools/build_central_campus.py`, `tools/campus_pitch.py` | `toa-nha-trung-tam.blend`, `maps/trung-tam/trung-tam.glb` |
 | Khu E | `tools/build_zone_e.py` | `khu-e.blend`, `maps/khu-e/khu-e.glb` |
+| Khu A | `tools/build_zone_a.py`, `tools/export_zone_a.py` | `khu-a-demo.blend`, `maps/khu-a/khu-a.glb` |
 
-Hai builder ban ngày dùng chung các helper hình học và vật liệu trong `tools/campus_mesh.py`.
+Trung tâm và Khu E dùng chung các helper hình học và vật liệu trong `tools/campus_mesh.py`.
 
 Dùng Blender nền để dựng lại cảnh khi thay đổi hình học. Các script dùng `bpy` và `numpy` trong Blender. Dự án đã được dựng bằng Blender 5.3. Trên macOS, nếu lệnh `blender` chưa có trên PATH, dùng `/Applications/Blender.app/Contents/MacOS/Blender`. Trên Windows, dùng `"C:\Program Files\Blender Foundation\Blender 5.3\blender.exe"`. Hai builder đọc font Arial và Times từ `/System/Library/Fonts/Supplemental` trên macOS hoặc `C:\Windows\Fonts` trên Windows. Builder Trung tâm dùng ảnh phù hiệu trong `maps/trung-tam/`.
 

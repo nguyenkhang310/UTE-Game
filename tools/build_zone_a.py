@@ -2,10 +2,22 @@
 
 import math
 import random
+import sys
+from pathlib import Path
 
 import bmesh
 import bpy
 from mathutils import Vector
+
+
+# A text opened in Blender may have a path relative to the saved .blend.
+text = getattr(bpy.context.space_data, "text", None)
+source = bpy.path.abspath(text.filepath) if text and text.filepath else __file__
+sys.dont_write_bytecode = True
+tools_dir = str(Path(source).resolve().parent)
+if tools_dir not in sys.path:
+    sys.path.insert(0, tools_dir)
+from campus_mesh import collection, empty, view_marker, walk_limits
 
 
 # Dimensions in metres, estimated from the aerial references. +Y runs from
@@ -25,7 +37,7 @@ def remove_previous_build(scene):
     for root in tuple(scene.collection.children):
         if not root.get(OWNER):
             continue
-        groups = [*root.children, root]
+        groups = [*reversed(list(root.children_recursive)), root]
         objects = set(root.all_objects)
         data_blocks = {obj.data for obj in objects if obj.data is not None}
         materials = {
@@ -149,13 +161,14 @@ def hip_roof(group, name, x, y, width, length, eave, rise, mat):
     return mesh(group, name, corners + ridge, faces, mat)
 
 
-def long_building(group, palette):
+def long_building(zones, shared, palette):
     wall, concrete, glass, frame, roof, trim = palette
     eave = FLOORS * FLOOR_HEIGHT + 0.25
     outer_x = MAIN_WIDTH / 2
     inner_x = outer_x - WING_WIDTH
     middle_length = MAIN_LENGTH - 2 * END_WIDTH
     for side in (-1, 1):
+        group = zones[7 if side < 0 else 9]
         # The classroom walls sit behind the courtyard-facing galleries.
         wall_width = WING_WIDTH - 1.85
         center_x = side * (outer_x - wall_width / 2)
@@ -184,8 +197,12 @@ def long_building(group, palette):
                 0.36, 0.40, eave - 0.12, concrete)
 
     for y in (END_WIDTH / 2, MAIN_LENGTH - END_WIDTH / 2):
-        box(group, "Khối nối hai dãy", 0, y, FLOOR_HEIGHT, MAIN_WIDTH, END_WIDTH,
+        group = zones[6 if y < MAIN_LENGTH / 2 else 10]
+        connector = box(group, "Khối nối hai dãy", 0, y, FLOOR_HEIGHT, MAIN_WIDTH, END_WIDTH,
             eave - FLOOR_HEIGHT, wall)
+        if group == zones[6]:
+            source = empty("Bước chân trên hành lang", group, (-4, y, FLOOR_HEIGHT + 0.2), zoneSound="step")
+            source.parent = connector
         for x in (-12, -8, -4, 4, 8, 12):
             for column_y in (y - END_WIDTH / 2 + 0.24, y + END_WIDTH / 2 - 0.24):
                 box(group, "Cột lối vào sân cây", x, column_y, 0.12,
@@ -198,7 +215,7 @@ def long_building(group, palette):
                 for x in range(-12, 13, 3):
                     box(group, "Cửa sổ khối nối", x, facade_y, z + 1.03,
                         1.74, 0.09, 1.16, glass)
-    ring_roof(group, eave, roof, trim)
+    ring_roof(shared, eave, roof, trim)
 
 
 def annex(group, name, x, y, width, length, height, palette, roof, rise):
@@ -220,15 +237,21 @@ def annex(group, name, x, y, width, length, height, palette, roof, rise):
         1.7, 0.12, 2.35, frame)
 
 
-def canopy(group, x, y, width, length, under, concrete, roof):
+def canopy(group, x, y, width, length, under, concrete, roof, trigger=False):
     for side in (-1, 1):
         for end in (-1, 1):
             box(group, "Cột mái che", x + side * (width / 2 - 0.30),
                 y + end * (length / 2 - 0.35), 0.10, 0.26, 0.26, under, concrete)
     box(group, "Sàn lối có mái che", x, y, 0.047, width, length, 0.071, concrete)
     box(group, "Diềm mái che", x, y, under + 0.10, width + 0.36, length + 0.42, 0.15, roof)
-    hip_roof(group, "Mái che lối nối", x, y, width + 0.4, length + 0.46,
+    cover = hip_roof(group, "Mái che lối nối", x, y, width + 0.4, length + 0.46,
              under + 0.24, 0.42, roof)
+
+
+    if trigger:
+        zone = empty("Vùng dưới mái che", group, (x, y + length / 2 - 1.8, 1.7),
+                     (width / 2, 1.6, 2.0), zoneSound="trigger")
+        zone.parent = cover
 
 
 def tree_mesh(mat):
@@ -243,10 +266,16 @@ def tree_mesh(mat):
     return data
 
 
-def plant_trees(group, layouts, bark, greens):
+def plant_trees(zones, layouts, bark, greens):
     rng = random.Random(SEED)
     crowns = [tree_mesh(color) for color in greens]
     for x, y, radius in layouts:
+        if abs(x) < MAIN_WIDTH / 2 and y > 0:
+            group = zones[8]
+        elif abs(x) < MAIN_WIDTH / 2 and y < 0:
+            group = zones[5]
+        else:
+            group = zones[1]
         trunk = radius * rng.uniform(0.90, 1.17)
         disc(group, "Thân cây", x, y, 0.03, 0.105 * radius, trunk + radius * 0.45, bark, 8)
         for dx, dy, dz, size in ((0, 0, .64, .90), (-.47, .19, .36, .72),
@@ -314,6 +343,33 @@ def set_preview(scene, group):
                 view.region_3d.view_distance = 146
 
 
+# Walk proxies are derived again at export from the current world-space bounds.
+WALLS = {"Dãy lớp học", "Dãy mái bạc đỏ", "Dãy mái đỏ", "Cánh dãy mái đỏ",
+         "Khối mái sáng", "Cánh khối mái sáng", "Sảnh thấp khối mái sáng",
+         "Mốc tròn giữa sân", "Bồn cây dài trong khối A", "Vườn nhỏ cạnh mái che", "Thân cây"}
+FLOOR_SURFACES = {"Đường phía Tòa nhà Trung tâm", "Vỉa hè phía Khu A", "Nền cụm nhà phía đường",
+                  "Lối đi quanh khối A", "Sân nhỏ ở chân khối A", "Sàn lối có mái che",
+                  "Lối lát vào sân nhỏ", "Bệ tròn trong sân nhỏ", "Mặt lát quanh mốc tròn"}
+
+
+def configure_walk_surfaces(root, hand):
+    bpy.context.view_layer.update()
+    replacements = {obj.get("ka_replaces") for obj in hand.all_objects}
+    for obj in list(root.all_objects):
+        if obj.type != "MESH":
+            continue
+        label = obj.name.split(".")[0]
+        center = sum((Vector(v) for v in obj.bound_box), Vector()) / 8
+        center = obj.matrix_world @ center
+        obj["ka_id"] = f"{label}@{center.x:.2f},{center.y:.2f},{center.z:.2f}"
+        if obj["ka_id"] in replacements:
+            bpy.data.objects.remove(obj, do_unlink=True)
+        elif label in WALLS or label.startswith("Cột "):
+            obj["ka_walk"] = "wall"
+        elif label in FLOOR_SURFACES or (label == "Sàn hành lang" and center.z < 1):
+            obj["ka_walk"] = "floor"
+
+
 def build():
     scene = bpy.context.scene
     remove_previous_build(scene)
@@ -322,13 +378,23 @@ def build():
     root = bpy.data.collections.new("Khu A · Demo ngoại cảnh")
     root[OWNER] = True
     scene.collection.children.link(root)
-    groups = []
-    for name in ("Mặt bằng và lối đi", "Hai dãy lớp học và sân dài", "Cụm mái đỏ và mái sáng",
-                 "Sân nhỏ và mái che", "Cây xanh", "Góc xem và ánh sáng"):
-        group = bpy.data.collections.new(name)
-        root.children.link(group)
-        groups.append(group)
-    ground, campus, annexes, court, planting, preview = groups
+    names = ("Đường và vòng ngoài", "Nhà mái sáng", "Nhà mái bạc đỏ", "Nhà mái đỏ",
+             "Sân nhỏ và mái che", "Khối nối trước", "Dãy lớp trái", "Sân cây dài",
+             "Dãy lớp phải", "Khối nối sau")
+    hand = next((c for c in scene.collection.children if c.get("ka_manual")), None)
+    if hand is None:
+        hand = collection("Khu A · Chi tiết chỉnh tay")
+        hand["ka_manual"] = True
+    zones = {}
+    for code, name in enumerate(names, 1):
+        key = f"KA-{code:02}"
+        zones[code] = collection(f"{key} · {name}", root)
+        if not any(c.get("ka_zone") == key for c in hand.children):
+            collection(f"{key} · Tay · {name}", hand)["ka_zone"] = key
+    shared = collection("Khu A · Nền và mái chung", root)
+    preview = collection("Khu A · Camera và nắng", root)
+    markers = collection("Khu A · Mốc đi bộ", root)
+    ground, court = zones[1], zones[5]
 
     lawn = material("Cỏ", (.096, .16, .061), (.24, .33, .10), .30)
     asphalt = material("Nhựa đường", (.067, .074, .080), (.14, .148, .15), 2.0)
@@ -345,34 +411,34 @@ def build():
     marker = material("Mốc tròn xanh lam", (.078, .38, .56), roughness=.35)
     solar = material("Pin mặt trời", (.038, .097, .18), roughness=.23)
 
-    box(ground, "Nền khuôn viên", 0, 8, -0.24, 210, 210, .24, lawn)
+    box(shared, "Nền khuôn viên", 0, 8, -0.24, 210, 210, .24, lawn)
     box(ground, "Đường phía Tòa nhà Trung tâm", 0, -47, .003, 105, 7.2, .032, asphalt)
     box(ground, "Vỉa hè phía Khu A", 0, -42.2, .013, 93, 2.5, .060, paver)
     for x in range(-44, 45, 8):
         box(ground, "Vạch đường", x, -47, .037, 2.5, .11, .005, concrete)
-    box(ground, "Nền cụm nhà phía đường", 0, -21.2, .012, 62, 39, .058, paver)
-    box(ground, "Lối đi quanh khối A", 0, MAIN_LENGTH / 2, .012,
+    box(shared, "Nền cụm nhà phía đường", 0, -21.2, .012, 62, 39, .058, paver)
+    box(shared, "Lối đi quanh khối A", 0, MAIN_LENGTH / 2, .012,
         MAIN_WIDTH + 4, MAIN_LENGTH + 3, .06, paver)
     court_length = MAIN_LENGTH - 2 * END_WIDTH
     court_width = MAIN_WIDTH - 2 * WING_WIDTH
-    box(ground, "Bồn cây dài trong khối A", 0, MAIN_LENGTH / 2, .073,
+    box(zones[8], "Bồn cây dài trong khối A", 0, MAIN_LENGTH / 2, .073,
         court_width - 2.6, court_length - 4.0, .125, lawn)
-    long_building(campus, (wall, concrete, glass, frame, turquoise, trim))
+    long_building(zones, shared, (wall, concrete, glass, frame, turquoise, trim))
 
     palette = (wall, concrete, glass, frame)
-    annex(annexes, "Dãy mái bạc đỏ", -24.0, -15.0, 20.0, 21.0, 6.45, palette, rusty, 2.9)
-    annex(annexes, "Dãy mái đỏ", 25.6, -13.6, 22.0, 14.8, 6.45, palette, dark_red, 2.65)
-    annex(annexes, "Cánh dãy mái đỏ", 30.9, -22.0, 11.4, 4.9, 6.38, palette, dark_red, .94)
-    box(annexes, "Thân tum mái bạc đỏ", -24.0, -15.0, 8.0, 6.7, 8.0, 1.59, trim)
-    hip_roof(annexes, "Tum mái bạc đỏ", -24.0, -15.0, 7.0, 8.3, 9.59, .83, rusty)
-    box(annexes, "Thân tum mái đỏ", 25.6, -13.6, 8.2, 9.2, 4.8, 1.04, dark_red)
-    hip_roof(annexes, "Tum mái đỏ", 25.6, -13.6, 9.5, 5.1, 9.24, .68, dark_red)
-    annex(annexes, "Khối mái sáng", -1.0, -31.0, 23.0, 14.7, 7.04, palette, pale, 1.38)
-    annex(annexes, "Cánh khối mái sáng", -1.0, -31.0, 16.8, 20.4, 7.08, palette, pale, 1.32)
-    annex(annexes, "Sảnh thấp khối mái sáng", -1.0, -19.6, 12.1, 5.0, 5.65, palette, pale, .44)
+    annex(zones[3], "Dãy mái bạc đỏ", -24.0, -15.0, 20.0, 21.0, 6.45, palette, rusty, 2.9)
+    annex(zones[4], "Dãy mái đỏ", 25.6, -13.6, 22.0, 14.8, 6.45, palette, dark_red, 2.65)
+    annex(zones[4], "Cánh dãy mái đỏ", 30.9, -22.0, 11.4, 4.9, 6.38, palette, dark_red, .94)
+    box(zones[3], "Thân tum mái bạc đỏ", -24.0, -15.0, 8.0, 6.7, 8.0, 1.59, trim)
+    hip_roof(zones[3], "Tum mái bạc đỏ", -24.0, -15.0, 7.0, 8.3, 9.59, .83, rusty)
+    box(zones[4], "Thân tum mái đỏ", 25.6, -13.6, 8.2, 9.2, 4.8, 1.04, dark_red)
+    hip_roof(zones[4], "Tum mái đỏ", 25.6, -13.6, 9.5, 5.1, 9.24, .68, dark_red)
+    annex(zones[2], "Khối mái sáng", -1.0, -31.0, 23.0, 14.7, 7.04, palette, pale, 1.38)
+    annex(zones[2], "Cánh khối mái sáng", -1.0, -31.0, 16.8, 20.4, 7.08, palette, pale, 1.32)
+    annex(zones[2], "Sảnh thấp khối mái sáng", -1.0, -19.6, 12.1, 5.0, 5.65, palette, pale, .44)
     for row in range(2):
         for i in range(8):
-            box(annexes, "Tấm pin trên mái sảnh", -5.15 + i * .99, -18.56 - row * 1.29,
+            box(zones[2], "Tấm pin trên mái sảnh", -5.15 + i * .99, -18.56 - row * 1.29,
                 6.13, .90, .62, .043, solar)
 
     box(court, "Sân nhỏ ở chân khối A", 0, -12.2, .074, 11.2, 13.5, .038, lawn)
@@ -380,7 +446,7 @@ def build():
     disc(court, "Mặt lát quanh mốc tròn", 0, -12.6, .232, 3.21, .035, paver)
     disc(court, "Mốc tròn giữa sân", 0, -12.6, .267, .65, .23, marker)
     for x in (-7.6, 7.6):
-        canopy(court, x, -9.2, 4.0, 10.7, 3.45, concrete, turquoise)
+        canopy(court, x, -9.2, 4.0, 10.7, 3.45, concrete, turquoise, trigger=True)
     canopy(court, -12.2, -22.0, 8.6, 4.5, 3.45, concrete, turquoise)
     box(court, "Vườn nhỏ cạnh mái che", -12.1, -13.0, .074, 4.2, 10.4, .064, lawn)
     box(court, "Lối lát vào sân nhỏ", 10.25, -26, .075, 2.9, 30.6, .017, paver)
@@ -395,7 +461,13 @@ def build():
     for side in (-1, 1):
         for i, y in enumerate((2, 12, 22, 33, 44, 55, 63)):
             trees.append((side * (20.8 + (i % 3) * 1.55), y, 2.9 + (i % 4) * .38))
-    plant_trees(planting, trees, bark, greens)
+    plant_trees(zones, trees, bark, greens)
+    walk_limits(markers, -44, 44, -50, 65)
+    view_marker(markers, "via-he", (12, -42.2, 1.763), (12, -16, 1.763))
+    view_marker(markers, "san-nho", (7.6, -15.5, 1.76), (7.6, -4, 1.76))
+    view_marker(markers, "san-cay", (5.85, 17, 1.76), (0, 33, 2.1))
+    empty("Nền âm sân nhỏ", court, (0, -12.6, 2.1), zoneSound="insects")
+    configure_walk_surfaces(root, hand)
     set_preview(scene, preview)
 
 

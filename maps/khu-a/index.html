@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#142632">
+  <title>Khu A · HCMUTE</title>
+  <link rel="stylesheet" href="../trung-tam/viewer.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "../../vendor/three/three.module.js",
+        "three/addons/": "../../vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body class="zone-a">
+  <canvas id="scene" aria-label="Khu A, hai dãy lớp học và sân cây"
+    data-model="./khu-a.glb" data-sound="khu-a" data-start-view="via-he"></canvas>
+  <div class="aim" aria-hidden="true"></div>
+  <main id="menu" class="menu">
+    <div class="menu-panel">
+      <a class="back" href="../index.html">← Chọn bản đồ</a>
+      <h1>Khu A</h1>
+      <p class="map-description">Từ vỉa hè qua sân nhỏ đến hành lang và sân cây</p>
+      <div class="viewpoints" aria-label="Điểm bắt đầu">
+        <button type="button" data-view="via-he" aria-pressed="true" disabled>Vỉa hè</button>
+        <button type="button" data-view="san-nho" aria-pressed="false" disabled>Sân nhỏ</button>
+        <button type="button" data-view="san-cay" aria-pressed="false" disabled>Sân cây</button>
+      </div>
+      <div class="entry">
+        <button id="enter" class="enter" type="button" disabled>Đang tải…</button>
+        <span class="controls"><kbd>WASD</kbd> đi · <kbd>Chuột</kbd> nhìn · <kbd>Esc</kbd> mở menu</span>
+      </div>
+      <p class="notice" id="notice" role="status"></p>
+    </div>
+  </main>
+  <script type="module" src="../trung-tam/viewer.js"></script>
+</body>
+</html>
